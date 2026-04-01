@@ -1,0 +1,1 @@
+C:\Users\Enacton\.gemini\antigravity\brain\6867b02e-21c0-4dfe-8607-4c6df5495dbb\implementation_plan.md.resolved
