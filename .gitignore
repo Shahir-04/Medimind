@@ -12,3 +12,6 @@ wheels/
 frontend/node_modules
 frontend/.env
 .env
+
+# Local Mem0 persistent storage (Qdrant on-disk vectors + SQLite metadata)
+mem0_data/

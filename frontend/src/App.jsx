@@ -7,14 +7,32 @@ function App() {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    // Check for existing local token
-    const token = localStorage.getItem('token')
-    const email = localStorage.getItem('email')
+    const token = sessionStorage.getItem('token')
+    const email = sessionStorage.getItem('email')
+
     if (token && email) {
-      setSession({ access_token: token, email: email })
+      try {
+        // Decode the JWT payload (base64 middle section) without a library
+        const payload = JSON.parse(atob(token.split('.')[1]))
+        const isExpired = payload.exp && Date.now() / 1000 > payload.exp
+
+        if (isExpired) {
+          // Token has expired — clear storage and show login
+          sessionStorage.removeItem('token')
+          sessionStorage.removeItem('email')
+        } else {
+          setSession({ access_token: token, email: email })
+        }
+      } catch {
+        // Malformed token — clear and show login
+        sessionStorage.removeItem('token')
+        sessionStorage.removeItem('email')
+      }
     }
+
     setIsLoading(false)
   }, [])
+
 
   if (isLoading) {
     return (
@@ -36,15 +54,15 @@ function App() {
       {!session ? (
         <div className="flex items-center justify-center min-h-screen">
           <Auth onLogin={(email, token) => {
-            localStorage.setItem('token', token)
-            localStorage.setItem('email', email)
+            sessionStorage.setItem('token', token)
+            sessionStorage.setItem('email', email)
             setSession({ access_token: token, email: email })
           }} />
         </div>
       ) : (
         <Chat session={session} onLogout={() => {
-          localStorage.removeItem('token')
-          localStorage.removeItem('email')
+          sessionStorage.removeItem('token')
+          sessionStorage.removeItem('email')
           setSession(null)
         }}/>
       )}

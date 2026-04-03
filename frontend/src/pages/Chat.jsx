@@ -12,13 +12,7 @@ import {
 } from "@/components/ui/tooltip"
 
 export default function Chat({ session, onLogout }) {
-  const [messages, setMessages] = useState([
-    {
-      id: 1,
-      role: 'ai',
-      content: "Welcome to MediMind! 🌿\n\nTo provide you with highly personalized medical insights, could you please share any **age, pre-existing conditions, dietary preferences, allergies, or current medications** you're taking?\n\n*(Alternatively, you can skip and just ask a question, or upload a medical PDF case file below!)*"
-    }
-  ]);
+  const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -31,14 +25,54 @@ export default function Chat({ session, onLogout }) {
   };
   useEffect(() => { scrollToBottom(); }, [messages]);
 
+  useEffect(() => {
+    if (!session) return;
+    const fetchMemoryAndSetWelcome = async () => {
+      try {
+        const res = await fetch(`/api/memory/${encodeURIComponent(session.email)}`, {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const memoryArray = Array.isArray(data.memories) ? data.memories : (data.memories?.results || []);
+          const isMemoryEmpty = memoryArray.length === 0;
+          
+          setMessages([{
+            id: 1,
+            role: 'ai',
+            content: isMemoryEmpty 
+              ? "Welcome to MediMind! 🌿\n\nTo provide you with highly personalized medical insights, I'd like to get to know you a bit better. To start, what is your name?"
+              : "Welcome back to MediMind! 🌿\n\nHow can I help you today?"
+          }]);
+        }
+      } catch (err) {
+        console.error("Failed to fetch memory:", err);
+        setMessages([{
+          id: 1,
+          role: 'ai',
+          content: "Welcome to MediMind! 🌿\n\nHow can I help you today?"
+        }]);
+      }
+    };
+    fetchMemoryAndSetWelcome();
+  }, [session]);
+
   const handleSend = async (e) => {
     e?.preventDefault();
     if (!input.trim()) return;
 
+    const currentMessages = messages; // snapshot before setState
     const userMessage = { id: Date.now(), role: 'user', content: input };
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
     setIsTyping(true);
+
+    // Build history for the LLM (exclude system messages, map 'ai' -> 'assistant')
+    const history = currentMessages
+      .filter(m => m.role === 'user' || m.role === 'ai')
+      .map(m => ({ role: m.role === 'ai' ? 'assistant' : 'user', content: m.content }));
 
     try {
       const res = await fetch('/api/chat', {
@@ -47,7 +81,7 @@ export default function Chat({ session, onLogout }) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`
         },
-        body: JSON.stringify({ user_email: session.email, message: userMessage.content })
+        body: JSON.stringify({ user_email: session.email, message: userMessage.content, history })
       });
 
       if (!res.ok) throw new Error('Failed to get response');

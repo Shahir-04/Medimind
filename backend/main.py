@@ -66,7 +66,7 @@ def get_memory(user_email: str):
 @app.post("/chat", response_model=ChatResponse)
 def chat_endpoint(req: ChatRequest):
     try:
-        reply = agent.generate_chat_response(req.user_email, req.message)
+        reply = agent.generate_chat_response(req.user_email, req.message, history=req.history)
         return ChatResponse(response=reply, updated_memory=True)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -80,5 +80,12 @@ async def upload_document(user_email: str = Form(...), file: UploadFile = File(.
         file_bytes = await file.read()
         result = process_and_store_pdf(file_bytes, user_email, file.filename)
         return {"filename": file.filename, "status": "indexed", "details": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+@app.delete("/memory/clear/{user_email}")
+def clear_memory(user_email: str):
+    try:
+        m.delete_all(user_id=user_email)
+        return {"status": "success", "message": f"Memory cleared for {user_email}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

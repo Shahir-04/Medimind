@@ -1,3 +1,4 @@
+from typing import List, Dict, Optional
 from pydantic import BaseModel
 
 class LoginRequest(BaseModel):
@@ -12,6 +13,7 @@ class TokenResponse(BaseModel):
 class ChatRequest(BaseModel):
     user_email: str
     message: str
+    history: Optional[List[Dict[str, str]]] = []
 
 class ChatResponse(BaseModel):
     response: str
