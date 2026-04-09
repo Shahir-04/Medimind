@@ -180,6 +180,42 @@
     @apply bg-neutral-800/60 border-neutral-700/50;
   }
 
+  /* Prose Styles for AI Messages */
+  .prose {
+    @apply text-foreground;
+  }
+
+  .prose p {
+    @apply text-foreground leading-relaxed;
+  }
+
+  .prose strong {
+    @apply font-bold text-foreground;
+  }
+
+  .prose h1,
+  .prose h2,
+  .prose h3 {
+    @apply text-foreground font-bold;
+  }
+
+  .prose ul,
+  .prose ol {
+    @apply text-foreground;
+  }
+
+  .prose li {
+    @apply text-foreground;
+  }
+
+  .prose code {
+    @apply text-foreground;
+  }
+
+  .prose a {
+    @apply text-primary hover:text-primary/80 underline;
+  }
+
   /* Hover Lift Effect */
   .hover-lift {
     @apply transition-all duration-300 hover:-translate-y-0.5 hover:shadow-soft;

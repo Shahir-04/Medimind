@@ -17,3 +17,5 @@ error.log
 
 # Local Mem0 persistent storage (Qdrant on-disk vectors + SQLite metadata)
 mem0_data/
+mem0_feedback_data/
+knowledge_base/
