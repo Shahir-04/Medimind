@@ -11,34 +11,49 @@ export default function Auth({ onLogin }) {
   const [loading, setLoading] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [isLogin, setIsLogin] = useState(true)
+  const [mode, setMode] = useState('login')
   const [errorMsg, setErrorMsg] = useState('')
+  const [successMsg, setSuccessMsg] = useState('')
 
   const handleAuth = async (e) => {
     e.preventDefault()
     setLoading(true)
     setErrorMsg('')
+    setSuccessMsg('')
 
-    const endpoint = isLogin ? '/api/login' : '/api/signup'
+    let endpoint = '/api/login'
+    let bodyData = { email, password }
+    if (mode === 'signup') {
+      endpoint = '/api/signup'
+    } else if (mode === 'reset') {
+      endpoint = '/api/reset-password'
+      bodyData = { email, new_password: password }
+    }
 
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify(bodyData)
       })
 
       const data = await res.json()
 
       if (!res.ok) {
-        let msg = "Authentication Failed"
+        let msg = mode === 'reset' ? "Password Reset Failed" : "Authentication Failed"
         if (data.detail) {
           msg = Array.isArray(data.detail) ? data.detail[0].msg : data.detail
         }
         throw new Error(msg)
       }
 
-      if (onLogin) onLogin(data.email, data.access_token)
+      if (mode === 'reset') {
+        setSuccessMsg("Password reset successfully. Please log in.")
+        setMode('login')
+        setPassword('')
+      } else {
+        if (onLogin) onLogin(data.email, data.access_token)
+      }
 
     } catch (err) {
       setErrorMsg(err.message)
@@ -80,9 +95,11 @@ export default function Auth({ onLogin }) {
           </CardTitle>
 
           <CardDescription className="text-xs sm:text-sm font-medium text-muted-foreground">
-            {isLogin
+            {mode === 'login'
               ? 'Welcome back! Please enter your details.'
-              : 'Create your personalized medical profile.'}
+              : mode === 'signup'
+              ? 'Create your personalized medical profile.'
+              : 'Enter your email & new password to reset.'}
           </CardDescription>
         </CardHeader>
 
@@ -102,7 +119,9 @@ export default function Auth({ onLogin }) {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-foreground font-medium text-sm">Password</Label>
+              <Label htmlFor="password" className="text-foreground font-medium text-sm">
+                {mode === 'reset' ? 'New Password' : 'Password'}
+              </Label>
               <Input
                 id="password"
                 type="password"
@@ -112,11 +131,28 @@ export default function Auth({ onLogin }) {
                 required
                 className="input-premium"
               />
+              {mode === 'login' && (
+                <div className="flex justify-end">
+                  <button 
+                    type="button" 
+                    onClick={() => { setMode('reset'); setErrorMsg(''); setSuccessMsg(''); setPassword(''); }}
+                    className="text-xs text-primary hover:underline font-medium mt-1"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+              )}
             </div>
 
             {errorMsg && (
               <div className="mt-3 p-3 bg-red-50/80 backdrop-blur-sm text-red-600 text-sm rounded-lg border border-red-100 text-center animate-slide-down">
                 {errorMsg}
+              </div>
+            )}
+            
+            {successMsg && (
+              <div className="mt-3 p-3 bg-green-50/80 backdrop-blur-sm text-green-600 text-sm rounded-lg border border-green-100 text-center animate-slide-down">
+                {successMsg}
               </div>
             )}
           </CardContent>
@@ -133,18 +169,18 @@ export default function Auth({ onLogin }) {
                   Processing...
                 </>
               ) : (
-                isLogin ? 'Sign In' : 'Create Account'
+                mode === 'login' ? 'Sign In' : mode === 'signup' ? 'Create Account' : 'Reset Password'
               )}
             </Button>
 
             <button
               type="button"
-              onClick={() => { setIsLogin(!isLogin); setErrorMsg(''); }}
+              onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setErrorMsg(''); setSuccessMsg(''); }}
               className="text-sm text-muted-foreground hover:text-primary transition-colors outline-none font-medium"
             >
-              {isLogin
+              {mode === 'login'
                 ? "Don't have an account? Sign up"
-                : "Already have an account? Log in"}
+                : "Back to login"}
             </button>
           </CardFooter>
         </form>

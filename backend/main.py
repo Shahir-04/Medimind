@@ -8,7 +8,7 @@ load_dotenv()
 from backend.db import supabase
 from backend.mem0_config import get_mem0
 from backend.mem0_feedback_config import get_feedback_mem0
-from backend.models import ProfileRequest, ChatRequest, ChatResponse, LoginRequest, SignupRequest, TokenResponse, FeedbackRequest, DocumentUpdateRequest
+from backend.models import ProfileRequest, ChatRequest, ChatResponse, LoginRequest, SignupRequest, TokenResponse, FeedbackRequest, DocumentUpdateRequest, ResetPasswordRequest
 import backend.agent as agent
 from backend.rag import process_and_store_pdf
 import backend.auth as custom_auth
@@ -68,6 +68,18 @@ def login(req: LoginRequest):
         
     token = custom_auth.create_access_token({"sub": req.email})
     return TokenResponse(access_token=token, token_type="bearer", email=req.email)
+
+@app.post("/reset-password")
+def reset_password(req: ResetPasswordRequest):
+    """Direct Password Reset Endpoint (Local Demo)"""
+    user = supabase.table("custom_users").select("*").eq("email", req.email).execute()
+    if not user.data:
+        raise HTTPException(status_code=400, detail="User not found")
+        
+    hashed_pw = custom_auth.get_password_hash(req.new_password)
+    supabase.table("custom_users").update({"password_hash": hashed_pw}).eq("email", req.email).execute()
+    
+    return {"status": "success", "message": "Password reset successfully"}
 
 @app.post("/memory/add")
 def add_memory(req: ProfileRequest):

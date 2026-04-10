@@ -6,6 +6,10 @@ class LoginRequest(BaseModel):
     email: str
     password: str
 
+class ResetPasswordRequest(BaseModel):
+    email: str
+    new_password: str
+
 class SignupRequest(LoginRequest):
     @field_validator('email')
     @classmethod
