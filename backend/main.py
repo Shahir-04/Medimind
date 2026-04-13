@@ -122,6 +122,54 @@ def get_memory(user_email: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/symptoms/{user_email}")
+def get_symptoms(user_email: str):
+    """Extract reported symptoms and conditions from user memory using LLM."""
+    try:
+        data = get_mem0().get_all(user_id=user_email)
+        memories = data.get("results", data) if isinstance(data, dict) else data
+        if not memories:
+            return {"symptoms": []}
+
+        memory_texts = []
+        for mem in (memories if isinstance(memories, list) else []):
+            text = mem.get("memory", "") if isinstance(mem, dict) else str(mem)
+            if text:
+                memory_texts.append(text)
+
+        if not memory_texts:
+            return {"symptoms": []}
+
+        combined = "\n".join(memory_texts)
+        resp = _title_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": (
+                    "You are a medical data extractor. Given a user's health memory profile, "
+                    "extract ALL reported symptoms, conditions, and diseases as short labels. "
+                    "Return ONLY a JSON array of strings, e.g. [\"Fatigue\", \"Dry Skin\"]. "
+                    "Include chronic conditions, allergies, past illnesses, and current symptoms. "
+                    "Keep each label concise (1-3 words, title case). "
+                    "If no symptoms or conditions are found, return an empty array []."
+                )},
+                {"role": "user", "content": combined}
+            ],
+            temperature=0,
+            max_tokens=200,
+        )
+        import json
+        raw = resp.choices[0].message.content.strip()
+        # Handle markdown-wrapped JSON
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+        symptoms = json.loads(raw)
+        if not isinstance(symptoms, list):
+            symptoms = []
+        return {"symptoms": symptoms}
+    except Exception as e:
+        print(f"Symptom extraction failed: {e}")
+        return {"symptoms": []}
+
 @app.post("/chat", response_model=ChatResponse)
 def chat_endpoint(req: ChatRequest, background_tasks: BackgroundTasks):
     try:

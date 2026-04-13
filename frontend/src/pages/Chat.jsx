@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Paperclip, ThumbsUp, ThumbsDown, LogOut, Loader2, CheckCircle2, Bot, Sparkles, Pencil, Check, X, Sun, Moon, MessageSquarePlus, History, Files, FileText, Trash2, Settings2 } from 'lucide-react';
+import { Send, Paperclip, ThumbsUp, ThumbsDown, LogOut, Loader2, CheckCircle2, Bot, Sparkles, Pencil, Check, X, Sun, Moon, MessageSquarePlus, History, Files, FileText, Trash2, LayoutDashboard, Activity } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -32,6 +32,9 @@ export default function Chat({ session, onLogout }) {
   const [isTempUpload, setIsTempUpload] = useState(false);
   const [isInChatOnly, setIsInChatOnly] = useState(false);
   const [showUploadOptions, setShowUploadOptions] = useState(false);
+  const [isDashboardOpen, setIsDashboardOpen] = useState(false);
+  const [symptoms, setSymptoms] = useState([]);
+  const [isSymptomsLoading, setIsSymptomsLoading] = useState(false);
 
   const messagesEndRef = useRef(null);
 
@@ -60,10 +63,23 @@ export default function Chat({ session, onLogout }) {
     } catch (e) { }
   };
 
+  const fetchSymptoms = async () => {
+    setIsSymptomsLoading(true);
+    try {
+      const res = await fetch(`/api/symptoms/${encodeURIComponent(session.email)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSymptoms(data.symptoms || []);
+      }
+    } catch (e) { }
+    setIsSymptomsLoading(false);
+  };
+
   useEffect(() => {
     if (session) {
       fetchThreads();
       fetchFiles();
+      fetchSymptoms();
     }
   }, [session]);
 
@@ -422,6 +438,16 @@ export default function Chat({ session, onLogout }) {
 
         {/* Chat Area */}
         <div className="flex-1 flex flex-col h-full relative">
+          <div className="absolute top-0 right-0 p-4 md:p-6 z-30">
+            <button
+              onClick={() => setIsDashboardOpen(!isDashboardOpen)}
+              className={`flex items-center gap-2 px-4 py-2 glass-card border rounded-xl text-sm font-semibold transition-all shadow-subtle ${isDashboardOpen ? 'bg-primary/10 border-primary/30 text-primary' : 'border-neutral-200/50 dark:border-neutral-700/50 text-neutral-500 hover:text-primary hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50'}`}
+            >
+              <LayoutDashboard className="w-4 h-4" />
+              Dashboard
+            </button>
+          </div>
+
           <div className="absolute top-0 w-full h-12 bg-gradient-to-b from-background via-background to-transparent z-10 pointer-events-none"></div>
 
           <ScrollArea className="flex-1 px-4 md:px-8 py-6 pb-44 relative scrollbar-premium">
@@ -635,6 +661,76 @@ export default function Chat({ session, onLogout }) {
             </div>
           </div>
         </div>
+
+        {/* Right Sidebar (Dashboard) */}
+        {isDashboardOpen && (
+          <div className="w-full md:w-80 glass-card border-l border-neutral-200/50 dark:border-neutral-700/50 flex flex-col z-10 animate-slide-left bg-neutral-50/50 dark:bg-neutral-900/50">
+            <div className="p-5 border-b border-neutral-200/50 dark:border-neutral-700/50 flex items-center justify-between space-x-2">
+              <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
+                <LayoutDashboard className="w-5 h-5 text-primary" />
+                Dashboard
+              </h2>
+              <button onClick={() => setIsDashboardOpen(false)} className="p-1.5 rounded-lg text-neutral-400 hover:text-foreground hover:bg-neutral-100 dark:hover:bg-neutral-800 transition">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 p-5 space-y-6 overflow-y-auto scrollbar-premium">
+              {/* Uploaded Assets */}
+              <div className="space-y-3">
+                <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Uploaded Assets</h3>
+                <div className="space-y-2">
+                  {uploadedFiles.length === 0 ? (
+                    <div className="text-center py-4 text-neutral-400 flex flex-col items-center gap-2 border border-dashed border-neutral-200/50 dark:border-neutral-700/50 rounded-xl bg-white/30 dark:bg-neutral-800/30">
+                      <FileText className="w-6 h-6 opacity-40" />
+                      <p className="text-xs font-medium">No assets yet.</p>
+                    </div>
+                  ) : (
+                    uploadedFiles.map((file, i) => (
+                      <div key={i} className="flex items-center gap-3 p-3 rounded-xl border border-neutral-200/50 dark:border-neutral-700/50 bg-white/80 dark:bg-neutral-800/80 shadow-subtle list-item-glow">
+                        <div className="bg-orange-100 dark:bg-orange-900/30 p-2 rounded-lg text-orange-500 flex-shrink-0">
+                          <FileText className="w-4 h-4" />
+                        </div>
+                        <div className="flex-1 truncate">
+                          <p className="text-xs font-bold truncate text-foreground">{file.filename}</p>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">Indexed</p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Reported Symptoms */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Reported Symptoms</h3>
+                  <button onClick={fetchSymptoms} className="text-neutral-400 hover:text-primary transition-colors" title="Refresh symptoms">
+                    <Activity className={`w-3.5 h-3.5 ${isSymptomsLoading ? 'animate-pulse' : ''}`} />
+                  </button>
+                </div>
+                {isSymptomsLoading ? (
+                  <div className="flex items-center justify-center py-4 gap-2 text-muted-foreground">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span className="text-xs font-medium">Analyzing history...</span>
+                  </div>
+                ) : symptoms.length === 0 ? (
+                  <div className="text-center py-4 text-neutral-400 flex flex-col items-center gap-2 border border-dashed border-neutral-200/50 dark:border-neutral-700/50 rounded-xl bg-white/30 dark:bg-neutral-800/30">
+                    <Activity className="w-6 h-6 opacity-40" />
+                    <p className="text-xs font-medium">No symptoms reported yet.</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {symptoms.map((symptom, i) => (
+                      <span key={i} className="px-3 py-1.5 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-xs font-bold border border-blue-100 dark:border-blue-800/30 shadow-subtle flex items-center justify-center">
+                        {symptom}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Files Modal */}
@@ -684,7 +780,7 @@ export default function Chat({ session, onLogout }) {
                             onChange={(e) => handleUpdateFileScope(file.filename, e.target.checked, file.in_chat_only)}
                             className="rounded border-neutral-300 text-primary focus:ring-primary h-3 w-3"
                           />
-                          24h Temp
+                          Temp File
                         </label>
                         <label className="flex items-center gap-1.5 text-[10px] font-medium cursor-pointer">
                           <input

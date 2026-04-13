@@ -1,8 +1,9 @@
 import bcrypt
 import jwt
+import os
 from datetime import datetime, timedelta, timezone
 
-SECRET_KEY = "medimind_local_secret_key" # Replace in production
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "medimind_local_secret_key_needs_32_bytes_min") # Replace in production
 ALGORITHM = "HS256"
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
