@@ -1,4 +1,5 @@
 import os
+import concurrent.futures
 from datetime import datetime
 from openai import OpenAI
 from backend.mem0_config import get_mem0
@@ -48,51 +49,60 @@ TIME-AWARENESS RULES:
 def generate_chat_response(user_email: str, message: str, history: list = None, thread_id: str = None) -> str:
     now = datetime.now().strftime("%B %d, %Y at %I:%M %p")
     
-    try:
-        search_res = get_mem0().search(message, user_id=user_email, limit=5)
-        relevant_memories = search_res.get("results", search_res) if isinstance(search_res, dict) else search_res
+    def fetch_profile():
+        try:
+            search_res = get_mem0().search(message, user_id=user_email, limit=5)
+            relevant_memories = search_res.get("results", search_res) if isinstance(search_res, dict) else search_res
+            if isinstance(relevant_memories, list) and len(relevant_memories) > 0 and isinstance(relevant_memories[0], dict):
+                memory_lines = []
+                for mem in relevant_memories:
+                    memory_text = mem.get("memory", "")
+                    created_at = mem.get("created_at", None) or mem.get("updated_at", None)
+                    if created_at:
+                        try:
+                            dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                            date_str = dt.strftime("%B %d, %Y at %I:%M %p")
+                        except Exception:
+                            date_str = created_at
+                        memory_lines.append(f"[Recorded on {date_str}] {memory_text}")
+                    else:
+                        memory_lines.append(memory_text)
+                return "\n".join(memory_lines)
+            return "No prior health profile data."
+        except Exception as e:
+            return f"Error Retrieving Context: {str(e)}"
+
+    def fetch_global_feedback():
+        try:
+            global_res = get_feedback_mem0().search(message, user_id=GLOBAL_FEEDBACK_ID, limit=3)
+            global_memories = global_res.get("results", global_res) if isinstance(global_res, dict) else global_res
+            if isinstance(global_memories, list) and len(global_memories) > 0:
+                global_lines = [mem.get("memory", "") for mem in global_memories if mem.get("memory")]
+                return "\n".join(global_lines) if global_lines else ""
+        except Exception as e:
+            print(f"Could not load global feedback: {e}")
+        return ""
+
+    def fetch_pinecone():
+        try:
+            return get_pinecone_kb().search(message, limit=3)
+        except Exception as e:
+            print(f"Pinecone retrieval failed: {e}")
+            return ""
+
+    def fetch_rag():
+        return rag.search_documents(message, user_email=user_email, limit=3, thread_id=thread_id)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        future_profile = executor.submit(fetch_profile)
+        future_feedback = executor.submit(fetch_global_feedback)
+        future_pinecone = executor.submit(fetch_pinecone)
+        future_rag = executor.submit(fetch_rag)
         
-        if isinstance(relevant_memories, list) and len(relevant_memories) > 0 and isinstance(relevant_memories[0], dict):
-            memory_lines = []
-            for mem in relevant_memories:
-                memory_text = mem.get("memory", "")
-                # Extract timestamp from mem0 metadata
-                created_at = mem.get("created_at", None) or mem.get("updated_at", None)
-                if created_at:
-                    try:
-                        dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-                        date_str = dt.strftime("%B %d, %Y at %I:%M %p")
-                    except Exception:
-                        date_str = created_at
-                    memory_lines.append(f"[Recorded on {date_str}] {memory_text}")
-                else:
-                    memory_lines.append(memory_text)
-            context_str = "\n".join(memory_lines)
-        else:
-            context_str = "No prior health profile data."
-    except Exception as e:
-        context_str = f"Error Retrieving Context: {str(e)}"
-
-    # --- Fetch global bot feedback from dedicated ChromaDB ---
-    global_feedback_ctx = ""
-    try:
-        global_res = get_feedback_mem0().search(message, user_id=GLOBAL_FEEDBACK_ID, limit=3)
-        global_memories = global_res.get("results", global_res) if isinstance(global_res, dict) else global_res
-        if isinstance(global_memories, list) and len(global_memories) > 0:
-            global_lines = [mem.get("memory", "") for mem in global_memories if mem.get("memory")]
-            if global_lines:
-                global_feedback_ctx = "\n".join(global_lines)
-    except Exception as e:
-        print(f"Could not load global feedback: {e}")
-
-    # --- Fetch AUTHORITATIVE global medical knowledge (Pinecone) ---
-    pinecone_context = ""
-    try:
-        pinecone_context = get_pinecone_kb().search(message, limit=3)
-    except Exception as e:
-        print(f"Pinecone retrieval failed: {e}")
-
-    rag_user_context = rag.search_documents(message, user_email=user_email, limit=3, thread_id=thread_id)
+        context_str = future_profile.result()
+        global_feedback_ctx = future_feedback.result()
+        pinecone_context = future_pinecone.result()
+        rag_user_context = future_rag.result()
 
     sys_content = (
         f"Current Date & Time: {now}\n\n"
@@ -125,7 +135,9 @@ If all items are known, you may proceed to act as a medical assistant and answer
     
     if history:
         for m_item in history:
-            messages.append({"role": m_item["role"], "content": m_item["content"]})
+            content = m_item.get("content")
+            if content:
+                messages.append({"role": m_item.get("role", "user"), "content": content})
             
     messages.append({"role": "user", "content": message})
     
@@ -146,7 +158,9 @@ If all items are known, you may proceed to act as a medical assistant and answer
         ai_reply = response.choices[0].message.content
     except Exception as e:
         return f"Error computing AI response: {str(e)}"
-    
+    return ai_reply
+
+def store_chat_memory(user_email: str, message: str, ai_reply: str):
     try:
         timestamp = datetime.now().strftime("%B %d, %Y")
         get_mem0().add([
@@ -155,6 +169,3 @@ If all items are known, you may proceed to act as a medical assistant and answer
         ], user_id=user_email)
     except Exception as e:
         print(f"Failed to append memory to Mem0: {e}")
-        
-    return ai_reply
-

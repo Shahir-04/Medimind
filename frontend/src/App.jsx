@@ -64,7 +64,7 @@ function App() {
           sessionStorage.removeItem('token')
           sessionStorage.removeItem('email')
           setSession(null)
-        }}/>
+        }} />
       )}
     </div>
   )

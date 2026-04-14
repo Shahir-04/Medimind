@@ -94,7 +94,12 @@ GLOBAL_FEEDBACK_ID = "medimind_global_feedback"
 
 @app.post("/feedback")
 def submit_feedback(req: FeedbackRequest):
-    """Store user feedback in a SEPARATE ChromaDB for global bot learning."""
+    """Store user feedback in a SEPARATE store for global bot learning.
+
+    Uses infer=False so Mem0 stores the feedback text verbatim instead of
+    having its internal LLM distill/summarize it (which strips out the
+    feedback context and AI response details).
+    """
     try:
         if req.is_positive:
             fact = (
@@ -109,9 +114,13 @@ def submit_feedback(req: FeedbackRequest):
                 f"Bot gave an unhelpful response: {req.ai_response}\n"
                 f"Do NOT repeat similar responses. Improve accuracy and empathy."
             )
-        get_feedback_mem0().add(fact, user_id=GLOBAL_FEEDBACK_ID)
+
+        # print(f"[Feedback] Storing {'positive' if req.is_positive else 'negative'} feedback ({len(fact)} chars)")
+        get_feedback_mem0().add(fact, user_id=GLOBAL_FEEDBACK_ID, infer=False)
+        print(f"[Feedback] Successfully stored feedback for user: {req.user_email}")
         return {"status": "success", "type": "positive" if req.is_positive else "negative"}
     except Exception as e:
+        print(f"[Feedback] ERROR: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/memory/{user_email}")
@@ -124,40 +133,93 @@ def get_memory(user_email: str):
 
 @app.get("/symptoms/{user_email}")
 def get_symptoms(user_email: str):
-    """Extract reported symptoms and conditions from user memory using LLM."""
+    """Extract reported symptoms and conditions from user memory AND uploaded documents."""
     try:
-        data = get_mem0().get_all(user_id=user_email)
-        memories = data.get("results", data) if isinstance(data, dict) else data
-        if not memories:
-            return {"symptoms": []}
+        import json
+        from datetime import datetime
 
+        # --- 1. Gather memory texts from Mem0 ---
         memory_texts = []
-        for mem in (memories if isinstance(memories, list) else []):
-            text = mem.get("memory", "") if isinstance(mem, dict) else str(mem)
-            if text:
-                memory_texts.append(text)
+        try:
+            data = get_mem0().get_all(user_id=user_email)
+            memories = data.get("results", data) if isinstance(data, dict) else data
+            for mem in (memories if isinstance(memories, list) else []):
+                if isinstance(mem, dict):
+                    text = mem.get("memory", "")
+                    created_at = mem.get("created_at", None) or mem.get("updated_at", None)
+                    if created_at and text:
+                        try:
+                            # Format date for context
+                            dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                            date_str = dt.strftime("%B %d, %Y")
+                            text = f"[Recorded on {date_str}] {text}"
+                        except Exception:
+                            pass
+                else:
+                    text = str(mem)
+                if text:
+                    memory_texts.append(text)
+        except Exception as e:
+            print(f"Symptom extraction – memory fetch failed: {e}")
 
-        if not memory_texts:
+        # --- 2. Gather document content from uploaded files ---
+        doc_texts = []
+        try:
+            if supabase:
+                doc_rows = (
+                    supabase.table("documents")
+                    .select("content, filename")
+                    .eq("user_email", user_email)
+                    .limit(50)
+                    .execute()
+                )
+                for row in (doc_rows.data or []):
+                    content = row.get("content", "")
+                    if content:
+                        doc_texts.append(content)
+        except Exception as e:
+            print(f"Symptom extraction – document fetch failed: {e}")
+
+        # If nothing from either source, return early
+        if not memory_texts and not doc_texts:
             return {"symptoms": []}
 
-        combined = "\n".join(memory_texts)
+        # --- 3. Build combined context ---
+        sections = []
+        if memory_texts:
+            sections.append("USER HEALTH MEMORY:\n" + "\n".join(memory_texts))
+        if doc_texts:
+            # Truncate to avoid token overflow – take first ~6000 chars of doc text
+            combined_docs = "\n".join(doc_texts)
+            if len(combined_docs) > 6000:
+                combined_docs = combined_docs[:6000] + "\n... (truncated)"
+            sections.append("UPLOADED MEDICAL DOCUMENTS:\n" + combined_docs)
+
+        combined = "\n\n".join(sections)
+        current_date_str = datetime.now().strftime("%B %d, %Y")
+
         resp = _title_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": (
-                    "You are a medical data extractor. Given a user's health memory profile, "
-                    "extract ALL reported symptoms, conditions, and diseases as short labels. "
-                    "Return ONLY a JSON array of strings, e.g. [\"Fatigue\", \"Dry Skin\"]. "
-                    "Include chronic conditions, allergies, past illnesses, and current symptoms. "
-                    "Keep each label concise (1-3 words, title case). "
-                    "If no symptoms or conditions are found, return an empty array []."
+                    f"Current Date: {current_date_str}\n\n"
+                    "You are a medical data extractor. Analyze the user's health memory profile "
+                    "and their uploaded medical documents.\n\n"
+                    "Extract ALL reported symptoms, conditions, diseases, diagnoses, "
+                    "and abnormal findings. "
+                    "Then, categorize each into one of two buckets based on the timestamps and medical nature:\n"
+                    "1. 'active': Temporary or acute symptoms (e.g. fever, headache, cold) reported within the last 3 days.\n"
+                    "2. 'chronic': Permanent, long-term, ongoing conditions, or allergies regardless of when they were recorded (e.g. diabetes, hypertension).\n\n"
+                    "CRITICAL RULE: Ignore 'resolved' symptoms (temporary/acute symptoms recorded MORE than 3 days ago).\n\n"
+                    "Return ONLY a JSON array of objects with 'name' and 'type' keys. Example:\n"
+                    '[{"name": "Fever", "type": "active"}, {"name": "Type 2 Diabetes", "type": "chronic"}]\n\n'
+                    "Keep each 'name' concise (1-3 words, title case). If no active or chronic symptoms/conditions are found, return exactly []."
                 )},
                 {"role": "user", "content": combined}
             ],
             temperature=0,
-            max_tokens=200,
+            max_tokens=300,
         )
-        import json
         raw = resp.choices[0].message.content.strip()
         # Handle markdown-wrapped JSON
         if raw.startswith("```"):
@@ -200,8 +262,13 @@ def chat_endpoint(req: ChatRequest, background_tasks: BackgroundTasks):
         if is_new_thread and thread_id:
             background_tasks.add_task(_generate_thread_title, thread_id, req.message, reply)
 
+        # Store memory extraction securely in the background
+        background_tasks.add_task(agent.store_chat_memory, req.user_email, req.message, reply)
+
         return ChatResponse(response=reply, updated_memory=True, thread_id=thread_id)
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/upload")

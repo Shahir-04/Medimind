@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Paperclip, ThumbsUp, ThumbsDown, LogOut, Loader2, CheckCircle2, Bot, Sparkles, Pencil, Check, X, Sun, Moon, MessageSquarePlus, History, Files, FileText, Trash2, LayoutDashboard, Activity } from 'lucide-react';
+import { Send, Paperclip, ThumbsUp, ThumbsDown, LogOut, Loader2, CheckCircle2, Bot, Sparkles, Pencil, Check, X, Sun, Moon, MessageSquarePlus, History, Files, FileText, Trash2, LayoutDashboard, Activity, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -35,6 +35,7 @@ export default function Chat({ session, onLogout }) {
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
   const [symptoms, setSymptoms] = useState([]);
   const [isSymptomsLoading, setIsSymptomsLoading] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const messagesEndRef = useRef(null);
 
@@ -161,7 +162,7 @@ export default function Chat({ session, onLogout }) {
           startNewChat();
         }
       }
-    } catch (e) {}
+    } catch (e) { }
   };
 
   const handleLogout = () => {
@@ -204,7 +205,7 @@ export default function Chat({ session, onLogout }) {
 
   const sendMessageToBackend = async (messageContent, historyMessages) => {
     const history = historyMessages
-      .filter(m => m.role === 'user' || m.role === 'ai')
+      .filter(m => (m.role === 'user' || m.role === 'ai') && m.content)
       .map(m => ({ role: m.role === 'ai' ? 'assistant' : 'user', content: m.content }));
 
     try {
@@ -351,22 +352,37 @@ export default function Chat({ session, onLogout }) {
           <div className="absolute bottom-20 right-20 w-64 h-64 bg-accent/5 rounded-full blur-3xl animate-pulse-soft animation-delay-1000" />
         </div>
 
+        {/* Mobile Sidebar Backdrop */}
+        {isSidebarOpen && (
+          <div
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-30 md:hidden animate-fade-in"
+            onClick={() => setIsSidebarOpen(false)}
+          />
+        )}
+
         {/* Sidebar */}
-        <div className="w-full md:w-72 glass-card border-r border-neutral-200/50 flex flex-col z-10 animate-slide-down">
+        <div className={`fixed md:relative inset-y-0 left-0 w-72 glass-card border-r border-neutral-200/50 flex flex-col z-40 md:z-10 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
           {/* Logo Section */}
           <div className="p-6 border-b border-neutral-200/50 flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-glow hover-lift">
               <Bot className="w-5 h-5 text-white" strokeWidth={2.5} />
             </div>
-            <div>
+            <div className="flex-1 min-w-0">
               <h1 className="text-xl font-bold text-gradient">MediMind</h1>
               <p className="text-[11px] font-medium text-muted-foreground truncate mt-0.5">{session.email}</p>
             </div>
+            {/* Close button visible only on mobile */}
+            <button
+              onClick={() => setIsSidebarOpen(false)}
+              className="p-1.5 rounded-lg text-neutral-400 hover:text-foreground hover:bg-neutral-100 dark:hover:bg-neutral-800 transition md:hidden"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
 
           <div className="flex-1 p-3 space-y-1 overflow-y-auto scrollbar-premium flex flex-col">
             <button
-              onClick={startNewChat}
+              onClick={() => { startNewChat(); setIsSidebarOpen(false); }}
               className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all font-medium ${!activeThreadId ? 'bg-primary/10 text-primary shadow-subtle' : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800'}`}
             >
               <MessageSquarePlus className="w-5 h-5" />
@@ -374,7 +390,7 @@ export default function Chat({ session, onLogout }) {
             </button>
 
             <button
-              onClick={() => setIsFilesModalOpen(true)}
+              onClick={() => { setIsFilesModalOpen(true); setIsSidebarOpen(false); }}
               className="w-full flex items-center gap-3 p-3 rounded-xl transition-all font-medium text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
             >
               <Files className="w-5 h-5" />
@@ -394,7 +410,7 @@ export default function Chat({ session, onLogout }) {
                   className={`group/thread w-full flex items-center gap-1 rounded-xl transition-all ${activeThreadId === thread.id ? 'bg-primary/10 shadow-subtle' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}
                 >
                   <button
-                    onClick={() => loadThread(thread.id)}
+                    onClick={() => { loadThread(thread.id); setIsSidebarOpen(false); }}
                     className={`flex-1 text-left truncate p-3 text-[13px] font-medium ${activeThreadId === thread.id ? 'text-primary' : 'text-neutral-600 dark:text-neutral-400'}`}
                   >
                     {thread.title}
@@ -437,20 +453,27 @@ export default function Chat({ session, onLogout }) {
         </div>
 
         {/* Chat Area */}
-        <div className="flex-1 flex flex-col h-full relative">
-          <div className="absolute top-0 right-0 p-4 md:p-6 z-30">
+        <div className="flex-1 flex flex-col h-full relative min-w-0">
+          {/* Mobile top bar with hamburger */}
+          <div className="absolute top-0 left-0 right-0 p-3 md:p-6 z-30 flex items-center justify-between md:justify-end pointer-events-none">
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="p-2.5 glass-card border border-neutral-200/50 dark:border-neutral-700/50 rounded-xl text-neutral-500 hover:text-primary hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-all shadow-subtle pointer-events-auto md:hidden"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
             <button
               onClick={() => setIsDashboardOpen(!isDashboardOpen)}
-              className={`flex items-center gap-2 px-4 py-2 glass-card border rounded-xl text-sm font-semibold transition-all shadow-subtle ${isDashboardOpen ? 'bg-primary/10 border-primary/30 text-primary' : 'border-neutral-200/50 dark:border-neutral-700/50 text-neutral-500 hover:text-primary hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50'}`}
+              className={`flex items-center gap-2 px-3 py-2 md:px-4 glass-card border rounded-xl text-sm font-semibold transition-all shadow-subtle pointer-events-auto ${isDashboardOpen ? 'bg-primary/10 border-primary/30 text-primary' : 'border-neutral-200/50 dark:border-neutral-700/50 text-neutral-500 hover:text-primary hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50'}`}
             >
               <LayoutDashboard className="w-4 h-4" />
-              Dashboard
+              <span className="hidden sm:inline">Dashboard</span>
             </button>
           </div>
 
           <div className="absolute top-0 w-full h-12 bg-gradient-to-b from-background via-background to-transparent z-10 pointer-events-none"></div>
 
-          <ScrollArea className="flex-1 px-4 md:px-8 py-6 pb-44 relative scrollbar-premium">
+          <ScrollArea className="flex-1 px-3 sm:px-4 md:px-8 py-6 pb-44 relative scrollbar-premium">
             <div className="max-w-3xl mx-auto space-y-8 pt-4">
               {messages.map((msg, idx) => (
                 <div key={msg.id} className={`group flex gap-4 animate-fade-in ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`} style={{ animationDelay: `${idx * 50}ms` }}>
@@ -615,7 +638,7 @@ export default function Chat({ session, onLogout }) {
           </ScrollArea>
 
           {/* Input Box */}
-          <div className="absolute bottom-0 w-full bg-gradient-to-t from-background via-background/95 to-background/0 pt-12 pb-6 px-4 md:px-8 z-20">
+          <div className="absolute bottom-0 w-full bg-gradient-to-t from-background via-background/95 to-background/0 pt-12 pb-4 sm:pb-6 px-3 sm:px-4 md:px-8 z-20">
             <form onSubmit={handleSend} className="max-w-3xl mx-auto relative flex items-end glass-card rounded-2xl overflow-hidden focus-within:ring-2 focus-within:ring-primary/10 focus-within:border-primary/30 transition-all shadow-glass p-2 gap-2">
               <div className="flex-shrink-0 relative flex items-center">
                 <Tooltip>
@@ -662,9 +685,17 @@ export default function Chat({ session, onLogout }) {
           </div>
         </div>
 
+        {/* Dashboard Backdrop (mobile) */}
+        {isDashboardOpen && (
+          <div
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-30 md:hidden animate-fade-in"
+            onClick={() => setIsDashboardOpen(false)}
+          />
+        )}
+
         {/* Right Sidebar (Dashboard) */}
         {isDashboardOpen && (
-          <div className="w-full md:w-80 glass-card border-l border-neutral-200/50 dark:border-neutral-700/50 flex flex-col z-10 animate-slide-left bg-neutral-50/50 dark:bg-neutral-900/50">
+          <div className="fixed md:relative inset-y-0 right-0 w-[85vw] sm:w-80 glass-card border-l border-neutral-200/50 dark:border-neutral-700/50 flex flex-col z-40 md:z-10 animate-slide-left bg-neutral-50/50 dark:bg-neutral-900/50">
             <div className="p-5 border-b border-neutral-200/50 dark:border-neutral-700/50 flex items-center justify-between space-x-2">
               <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
                 <LayoutDashboard className="w-5 h-5 text-primary" />
@@ -720,11 +751,23 @@ export default function Chat({ session, onLogout }) {
                   </div>
                 ) : (
                   <div className="flex flex-wrap gap-2">
-                    {symptoms.map((symptom, i) => (
-                      <span key={i} className="px-3 py-1.5 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-xs font-bold border border-blue-100 dark:border-blue-800/30 shadow-subtle flex items-center justify-center">
-                        {symptom}
-                      </span>
-                    ))}
+                    {symptoms.map((symptom, i) => {
+                      const isObj = typeof symptom === 'object' && symptom !== null;
+                      const name = isObj ? symptom.name : symptom;
+                      const type = isObj ? symptom.type : 'active';
+                      const isChronic = type === 'chronic';
+
+                      return (
+                        <span key={i} className={`px-3 py-1.5 rounded-full text-xs font-bold border shadow-subtle flex items-center gap-1.5 justify-center ${
+                          isChronic 
+                            ? 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 border-purple-100 dark:border-purple-800/30' 
+                            : 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border-orange-100 dark:border-orange-800/30'
+                        }`}>
+                          <Activity className="w-3 h-3 opacity-70" />
+                          {name}
+                        </span>
+                      );
+                    })}
                   </div>
                 )}
               </div>
