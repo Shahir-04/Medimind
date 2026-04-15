@@ -15,6 +15,10 @@ export default function Auth({ onLogin }) {
   const [successMsg, setSuccessMsg] = useState('')
   const [showPassword, setShowPassword] = useState(false)
 
+  const [pendingVerification, setPendingVerification] = useState(false)
+  const [verificationCode, setVerificationCode] = useState('')
+  const [verifyingCode, setVerifyingCode] = useState(false)
+
   const handleAuth = async (e) => {
     e.preventDefault()
     setLoading(true)
@@ -44,10 +48,18 @@ export default function Auth({ onLogin }) {
         if (data.detail) {
           msg = Array.isArray(data.detail) ? data.detail[0].msg : data.detail
         }
+        if (res.status === 403 && msg.includes('verify')) {
+          setPendingVerification(true)
+          setSuccessMsg('Please verify your email to log in.')
+        }
         throw new Error(msg)
       }
 
-      if (mode === 'reset') {
+      if (mode === 'signup') {
+        setPendingVerification(true)
+        setSuccessMsg(data.message || 'Verification email sent! Check your inbox.')
+        setPassword('')
+      } else if (mode === 'reset') {
         setSuccessMsg("Password reset successfully. Please log in.")
         setMode('login')
         setPassword('')
@@ -58,6 +70,55 @@ export default function Auth({ onLogin }) {
       setErrorMsg(err.message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleResendVerification = async () => {
+    setLoading(true)
+    setErrorMsg('')
+    try {
+      const res = await fetch('/api/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.detail || 'Failed to resend verification email')
+      }
+      setSuccessMsg(data.message || 'Verification email resent!')
+    } catch (err) {
+      setErrorMsg(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleVerifyCode = async () => {
+    if (!verificationCode || verificationCode.length !== 6) {
+      setErrorMsg('Please enter the 6-digit verification code')
+      return
+    }
+    setVerifyingCode(true)
+    setErrorMsg('')
+    try {
+      const res = await fetch('/api/verify-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code: verificationCode })
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.detail || 'Invalid verification code')
+      }
+      setPendingVerification(false)
+      setSuccessMsg('Email verified! You can now log in.')
+      setMode('login')
+      setVerificationCode('')
+    } catch (err) {
+      setErrorMsg(err.message)
+    } finally {
+      setVerifyingCode(false)
     }
   }
 
@@ -131,6 +192,115 @@ export default function Auth({ onLogin }) {
 
         <div className="w-full max-w-[420px] space-y-8 animate-fade-in">
 
+          {pendingVerification ? (
+            <div className="space-y-6">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Mail className="w-8 h-8 text-green-600 dark:text-green-400" />
+                </div>
+                <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight">Check Your Email</h2>
+                <p className="text-muted-foreground text-[15px] mt-3">
+                  We've sent a verification code to<br />
+                  <span className="font-semibold text-foreground">{email}</span>
+                </p>
+              </div>
+
+              {successMsg && (
+                <div className="p-3 bg-green-50 dark:bg-green-950/30 text-green-600 dark:text-green-400 text-sm rounded-lg border border-green-100 dark:border-green-900/50 flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0" />
+                  {successMsg}
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-center gap-2">
+                  {[0, 1, 2, 3, 4, 5].map((i) => (
+                    <input
+                      key={i}
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={1}
+                      value={verificationCode[i] || ''}
+                      onPaste={(e) => {
+                        e.preventDefault()
+                        const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6)
+                        setVerificationCode(pasted)
+                        if (pasted.length > 0) {
+                          document.getElementById(`otp-${Math.min(pasted.length - 1, 5)}`)?.focus()
+                        }
+                      }}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '')
+                        const newCode = verificationCode.split('')
+                        newCode[i] = val
+                        setVerificationCode(newCode.join('').slice(0, 6))
+                        if (val && i < 5) {
+                          document.getElementById(`otp-${i + 1}`)?.focus()
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Backspace' && !verificationCode[i] && i > 0) {
+                          document.getElementById(`otp-${i - 1}`)?.focus()
+                        }
+                      }}
+                      id={`otp-${i}`}
+                      className="w-12 h-14 text-center text-xl font-bold bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg focus:ring-2 focus:ring-[#3A8DED] focus:border-[#3A8DED] outline-none"
+                    />
+                  ))}
+                </div>
+                <p className="text-center text-sm text-muted-foreground">Enter the 6-digit code from your email</p>
+              </div>
+
+              {errorMsg && !successMsg && (
+                <div className="p-3 bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 text-sm rounded-lg border border-red-100 dark:border-red-900/50 flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
+                  {errorMsg}
+                </div>
+              )}
+
+              <Button
+                type="button"
+                onClick={handleVerifyCode}
+                className="w-full h-12 bg-[#4EA0F5] hover:bg-[#348BEA] text-white font-semibold text-[15px] rounded-xl shadow-md transition-all hover:shadow-lg"
+                disabled={verifyingCode || verificationCode.length !== 6}
+              >
+                {verifyingCode ? (
+                  <>
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    Verifying...
+                  </>
+                ) : (
+                  'Verify Code'
+                )}
+              </Button>
+
+              <Button
+                type="button"
+                onClick={handleResendVerification}
+                className="w-full h-12 bg-[#4EA0F5] hover:bg-[#348BEA] text-white font-semibold text-[15px] rounded-xl shadow-md transition-all hover:shadow-lg"
+                disabled={loading}
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  'Resend Verification Email'
+                )}
+              </Button>
+
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={() => { setPendingVerification(false); setMode('login'); setSuccessMsg(''); setErrorMsg(''); }}
+                  className="text-[#4EA0F5] hover:text-[#348BEA] hover:underline text-sm font-medium transition-colors"
+                >
+                  Back to Login
+                </button>
+              </div>
+            </div>
+          ) : (
           <div className="space-y-2">
             <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
               {mode === 'login' ? 'Welcome Back' : mode === 'reset' ? 'Reset Password' : 'Create Account'}
@@ -139,7 +309,9 @@ export default function Auth({ onLogin }) {
               {mode === 'login' ? 'Enter your credentials to access your profile.' : mode === 'reset' ? 'Enter your email and a new password.' : 'Enter your details to start your health profile.'}
             </p>
           </div>
+          )}
 
+          {pendingVerification ? null : (
           <form onSubmit={handleAuth} className="space-y-5">
             <div className="space-y-2">
               <Label htmlFor="email" className="text-[13px] font-semibold text-foreground/80">Email Address</Label>
@@ -238,8 +410,9 @@ export default function Auth({ onLogin }) {
               )}
             </Button>
           </form>
+          )}
 
-          {(mode === 'login' || mode === 'signup') && (
+          {(mode === 'login' || mode === 'signup') && !pendingVerification && (
             <div className="mt-8 space-y-6">
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">
@@ -277,18 +450,20 @@ export default function Auth({ onLogin }) {
             </div>
           )}
 
-          <div className="mt-8 text-center">
-            <p className="text-[14px] text-muted-foreground font-medium">
-              {mode === 'login' ? "Don't have an account? " : mode === 'reset' ? "Remembered your password? " : "Already have an account? "}
-              <button
-                type="button"
-                onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setErrorMsg(''); setSuccessMsg(''); }}
-                className="text-[#4EA0F5] hover:text-[#348BEA] hover:underline font-bold transition-colors"
-              >
-                {mode === 'login' ? 'Create one here' : 'Log in here'}
-              </button>
-            </p>
-          </div>
+          {!pendingVerification && (
+            <div className="mt-8 text-center">
+              <p className="text-[14px] text-muted-foreground font-medium">
+                {mode === 'login' ? "Don't have an account? " : mode === 'reset' ? "Remembered your password? " : "Already have an account? "}
+                <button
+                  type="button"
+                  onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setErrorMsg(''); setSuccessMsg(''); }}
+                  className="text-[#4EA0F5] hover:text-[#348BEA] hover:underline font-bold transition-colors"
+                >
+                  {mode === 'login' ? 'Create one here' : 'Log in here'}
+                </button>
+              </p>
+            </div>
+          )}
 
         </div>
       </div>

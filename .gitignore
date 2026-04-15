@@ -13,6 +13,7 @@ frontend/node_modules
 frontend/.env
 .env
 error.log
+opencode.json
 
 
 # Local Mem0 persistent storage (Qdrant on-disk vectors + SQLite metadata)
