@@ -7,6 +7,7 @@ from fastapi import (
     Depends,
     BackgroundTasks,
 )
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 import os
@@ -14,9 +15,12 @@ from openai import OpenAI
 
 load_dotenv()
 
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+
 from backend.db import supabase
 from backend.mem0_config import get_mem0
 from backend.mem0_feedback_config import get_feedback_mem0
+
 from backend.models import (
     ProfileRequest,
     ChatRequest,
@@ -38,6 +42,19 @@ from backend.email_service import (
 )
 
 app = FastAPI(title="MediMind API", description="Backend for MediMind AI Assistant")
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "https://medimind-frontend-chi.vercel.app",
+        FRONTEND_URL,
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 _title_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
@@ -251,14 +268,14 @@ def verify_email_get(code: str, email: str) -> HTMLResponse:
 
         if db_user.get("is_verified", False):
             return HTMLResponse(
-                content="""
+                content=f"""
                 <!DOCTYPE html>
                 <html>
                 <head><title>Already Verified - MediMind</title></head>
                 <body style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 100px auto; text-align: center; padding: 40px;">
                     <h1 style="color: #3b82f6;">MediMind</h1>
                     <p style="color: #64748b; font-size: 18px;">Your email is already verified!</p>
-                    <a href="http://localhost:3000/auth" style="display: inline-block; background: #3b82f6; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; margin-top: 20px;">Go to Login</a>
+                    <a href="{FRONTEND_URL}/auth" style="display: inline-block; background: #3b82f6; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; margin-top: 20px;">Go to Login</a>
                 </body>
                 </html>
             """,
@@ -293,7 +310,7 @@ def verify_email_get(code: str, email: str) -> HTMLResponse:
         ).eq("email", email).execute()
 
         return HTMLResponse(
-            content="""
+            content=f"""
             <!DOCTYPE html>
             <html>
             <head><title>Email Verified - MediMind</title></head>
@@ -301,7 +318,7 @@ def verify_email_get(code: str, email: str) -> HTMLResponse:
                 <h1 style="color: #3b82f6;">MediMind</h1>
                 <p style="color: #22c55e; font-size: 24px; font-weight: 600;">Email verified successfully!</p>
                 <p style="color: #64748b;">You can now log in to your account.</p>
-                <a href="http://localhost:3000/auth" style="display: inline-block; background: #3b82f6; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; margin-top: 20px;">Go to Login</a>
+                <a href="{FRONTEND_URL}/auth" style="display: inline-block; background: #3b82f6; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; margin-top: 20px;">Go to Login</a>
             </body>
             </html>
         """,
