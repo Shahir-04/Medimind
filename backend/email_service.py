@@ -11,7 +11,7 @@ load_dotenv()
 
 SMTP_EMAIL = os.getenv("SMTP_EMAIL", "medimindapp@gmail.com")
 SMTP_APP_PASSWORD = os.getenv("SMTP_APP_PASSWORD", "")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 
 def generate_verification_code(length: int = 6) -> str:

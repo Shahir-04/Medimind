@@ -52,6 +52,10 @@ def get_feedback_mem0():
     """Lazy-load the persistent Mem0 feedback client to avoid lock issues on import."""
     global _f_m
     if _f_m is None:
+        # Ensure the storage directory exists (needed for Render/production)
+        if not os.path.exists(_base_dir):
+            os.makedirs(_base_dir, exist_ok=True)
+            
         _f_m = Memory.from_config(feedback_config)
     return _f_m
 
