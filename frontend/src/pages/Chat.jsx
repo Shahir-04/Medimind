@@ -105,6 +105,12 @@ export default function Chat({ session, onLogout }) {
               ? "Welcome to MediMind! 🌿\n\nTo provide you with highly personalized medical insights, I'd like to get to know you a bit better. To start, what is your name?"
               : "Welcome back to MediMind! 🌿\n\nHow can I help you today?"
           }]);
+        } else {
+          setMessages([{
+            id: 1,
+            role: 'ai',
+            content: "Welcome to MediMind! 🌿\n\nHow can I help you today?"
+          }]);
         }
       } catch (err) {
         console.error("Failed to fetch memory:", err);
