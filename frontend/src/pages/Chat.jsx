@@ -17,7 +17,7 @@ import { useTheme } from '@/lib/useTheme';
 
 export default function Chat({ session, onLogout }) {
   const { theme, setTheme, resolvedTheme } = useTheme();
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState([{ id: 1, role: 'ai', content: "Welcome to MediMind! 🌿\n\nHow can I help you today?" }]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -93,25 +93,21 @@ export default function Chat({ session, onLogout }) {
             'Authorization': `Bearer ${session.access_token}`
           }
         });
+        
+        let isMemoryEmpty = true;
         if (res.ok) {
           const data = await res.json();
           const memoryArray = Array.isArray(data.memories) ? data.memories : (data.memories?.results || []);
-          const isMemoryEmpty = memoryArray.length === 0;
-
-          setMessages([{
-            id: 1,
-            role: 'ai',
-            content: isMemoryEmpty
-              ? "Welcome to MediMind! 🌿\n\nTo provide you with highly personalized medical insights, I'd like to get to know you a bit better. To start, what is your name?"
-              : "Welcome back to MediMind! 🌿\n\nHow can I help you today?"
-          }]);
-        } else {
-          setMessages([{
-            id: 1,
-            role: 'ai',
-            content: "Welcome to MediMind! 🌿\n\nHow can I help you today?"
-          }]);
+          isMemoryEmpty = memoryArray.length === 0;
         }
+
+        setMessages([{
+          id: 1,
+          role: 'ai',
+          content: isMemoryEmpty
+            ? "Welcome to MediMind! 🌿\n\nTo provide you with highly personalized medical insights, I'd like to get to know you a bit better. To start, what is your name?"
+            : "Welcome back to MediMind! 🌿\n\nHow can I help you today?"
+        }]);
       } catch (err) {
         console.error("Failed to fetch memory:", err);
         setMessages([{
