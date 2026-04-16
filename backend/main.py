@@ -11,6 +11,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 import os
+import threading
+import time
+import requests
+from contextlib import asynccontextmanager
 from openai import OpenAI
 
 load_dotenv()
@@ -41,7 +45,40 @@ from backend.email_service import (
     get_expiration_time,
 )
 
-app = FastAPI(title="MediMind API", description="Backend for MediMind AI Assistant")
+def keep_awake(url: str):
+    """Background task to ping the server and keep it alive on Render."""
+    health_url = f"{url.strip('/')}/health"
+    print(f"[Keep-Alive] Starting pinger for: {health_url}")
+    while True:
+        try:
+            # 14 minutes = 840 seconds (safely under Render's 15min limit)
+            response = requests.get(health_url, timeout=10)
+            print(f"[Keep-Alive] Ping successful! Status Code: {response.status_code}")
+        except Exception as e:
+            print(f"[Keep-Alive] Error: {e}")
+
+        time.sleep(840)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Start the keep-alive thread if enabled
+    enable_keep_alive = os.environ.get("ENABLE_KEEP_ALIVE", "false").lower() == "true"
+    backend_url = os.environ.get("BACKEND_URL")
+
+    if enable_keep_alive and backend_url:
+        threading.Thread(target=keep_awake, args=(backend_url,), daemon=True).start()
+    elif enable_keep_alive:
+        print("[Keep-Alive] Skipping: BACKEND_URL not set in environment.")
+
+    yield
+
+
+app = FastAPI(
+    title="MediMind API",
+    description="Backend for MediMind AI Assistant",
+    lifespan=lifespan,
+)
 
 # Configure CORS
 app.add_middleware(
