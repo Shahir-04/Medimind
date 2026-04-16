@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
+app = "backend.main:app"
 dependencies = [
     "bcrypt>=5.0.0",
     "fastapi>=0.135.2",
