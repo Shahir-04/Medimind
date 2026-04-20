@@ -7,24 +7,40 @@ function App() {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const oauthToken = urlParams.get('token')
+    const oauthEmail = urlParams.get('email')
+    const oauthError = urlParams.get('error')
+
+    if (oauthError) {
+      console.error('OAuth error:', oauthError)
+      window.history.replaceState({}, '', '/auth')
+    }
+
+    if (oauthToken && oauthEmail) {
+      sessionStorage.setItem('token', oauthToken)
+      sessionStorage.setItem('email', oauthEmail)
+      window.history.replaceState({}, '', '/auth')
+      setSession({ access_token: oauthToken, email: oauthEmail })
+      setIsLoading(false)
+      return
+    }
+
     const token = sessionStorage.getItem('token')
     const email = sessionStorage.getItem('email')
 
     if (token && email) {
       try {
-        // Decode the JWT payload (base64 middle section) without a library
         const payload = JSON.parse(atob(token.split('.')[1]))
         const isExpired = payload.exp && Date.now() / 1000 > payload.exp
 
         if (isExpired) {
-          // Token has expired — clear storage and show login
           sessionStorage.removeItem('token')
           sessionStorage.removeItem('email')
         } else {
           setSession({ access_token: token, email: email })
         }
       } catch {
-        // Malformed token — clear and show login
         sessionStorage.removeItem('token')
         sessionStorage.removeItem('email')
       }

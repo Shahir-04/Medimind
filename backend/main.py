@@ -6,6 +6,7 @@ from fastapi import (
     Form,
     Depends,
     BackgroundTasks,
+    Request,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
@@ -16,6 +17,7 @@ import time
 import requests
 from contextlib import asynccontextmanager
 from openai import OpenAI
+from starlette.middleware.sessions import SessionMiddleware
 
 load_dotenv()
 
@@ -92,6 +94,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "medimind_local_secret_key_needs_32_bytes_min")
+app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
 _title_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
@@ -201,11 +206,32 @@ def login(req: LoginRequest):
             detail="Please verify your email first. Check your inbox for the verification code.",
         )
 
-    if not custom_auth.verify_password(req.password, db_user["password_hash"]):
+    provider = db_user.get("provider", "email")
+    
+    # For Google OAuth users, skip password verification
+    if provider == "google":
+        pass  # Allow login without password
+    elif not db_user["password_hash"]:
+        raise HTTPException(status_code=400, detail="Invalid email or password")
+    elif not custom_auth.verify_password(req.password, db_user["password_hash"]):
         raise HTTPException(status_code=400, detail="Invalid email or password")
 
     token = custom_auth.create_access_token({"sub": req.email})
     return TokenResponse(access_token=token, token_type="bearer", email=req.email)
+
+
+from backend.google_auth import login_google, auth_google_callback
+
+@app.get("/auth/google/login")
+async def google_login(request: Request):
+    """Redirect to Google OAuth login."""
+    return await login_google(request)
+
+
+@app.get("/auth/google/callback")
+async def google_callback(request: Request):
+    """Handle Google OAuth callback."""
+    return await auth_google_callback(request)
 
 
 from pydantic import BaseModel
