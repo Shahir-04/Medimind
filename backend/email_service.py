@@ -25,8 +25,6 @@ def send_verification_email(to_email: str, code: str) -> bool:
         msg["From"] = SMTP_EMAIL
         msg["To"] = to_email
 
-        verify_link = f"{FRONTEND_URL}/verify-email?code={code}&email={to_email}"
-
         html_content = f"""
         <!DOCTYPE html>
         <html>
@@ -44,21 +42,13 @@ def send_verification_email(to_email: str, code: str) -> bool:
                 <div style="background: white; border-radius: 16px; padding: 40px; margin-top: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.08);">
                     <h2 style="color: #1e293b; margin: 0 0 20px 0; font-size: 24px; font-weight: 600;">Verify Your Email</h2>
                     <p style="color: #64748b; margin: 0 0 30px 0; font-size: 16px; line-height: 1.6;">
-                        Welcome to MediMind! Please verify your email address to get started.
+                        Welcome to MediMind! Please use the verification code below to complete your registration.
                     </p>
                     
                     <div style="background: #f1f5f9; border-radius: 12px; padding: 24px; margin: 30px 0;">
                         <p style="color: #64748b; margin: 0 0 12px 0; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Your verification code</p>
                         <div style="font-size: 36px; font-weight: 700; color: #3b82f6; letter-spacing: 8px; font-family: monospace;">{code}</div>
                     </div>
-                    
-                    <p style="color: #94a3b8; margin: 30px 0 0 0; font-size: 14px;">
-                        Or click the button below to verify instantly:
-                    </p>
-                    
-                    <a href="{verify_link}" style="display: inline-block; background: linear-gradient(135deg, #3b82f6 0%, #0ea5e9 100%); color: white; text-decoration: none; padding: 16px 32px; border-radius: 12px; font-weight: 600; font-size: 16px; margin-top: 20px; transition: transform 0.2s, box-shadow 0.2s;">
-                        Verify Email
-                    </a>
                 </div>
                 
                 <div style="text-align: center; margin-top: 30px;">
@@ -76,8 +66,6 @@ def send_verification_email(to_email: str, code: str) -> bool:
         Welcome to MediMind!
         
         Your verification code is: {code}
-        
-        Or verify instantly by visiting: {verify_link}
         
         This code expires in 24 hours.
         If you didn't create an account, you can safely ignore this email.
