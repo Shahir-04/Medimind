@@ -7,9 +7,15 @@ MediMind is a state-of-the-art AI medical assistant designed to provide personal
 ## Screenshots
 
 *(Space reserved for UI screenshots - To be populated)*
-<!-- slide -->
-<!-- slide -->
-<!-- slide -->
+![MediMind Chat Interface - Medical Advice]()
+
+![MediMind Chat Interface - Uploaded Case Files Modal]()
+
+![MediMind Create Account Screen]()
+
+![MediMind Google Sign-in Integration]()
+
+![MediMind Email Verification Screen]()
 
 ---
 
