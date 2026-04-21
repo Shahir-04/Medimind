@@ -6,16 +6,15 @@ MediMind is a state-of-the-art AI medical assistant designed to provide personal
 
 ## Screenshots
 
-*(Space reserved for UI screenshots - To be populated)*
-![MediMind Chat Interface - Medical Advice]()
+![MediMind Create Account Screen](https://github.com/Shahir-04/Medimind/blob/e4ce61e7514d50681ec12f0edb1a9afe8220269e/docs/MediMind%20Create%20Account%20Screen.png)
 
-![MediMind Chat Interface - Uploaded Case Files Modal]()
+![MediMind Email Verification Screen](https://github.com/Shahir-04/Medimind/blob/e4ce61e7514d50681ec12f0edb1a9afe8220269e/docs/MediMind%20Email%20Verification%20Screen.png)
 
-![MediMind Create Account Screen]()
+![MediMind Google Sign-in Integration](https://github.com/Shahir-04/Medimind/blob/e4ce61e7514d50681ec12f0edb1a9afe8220269e/docs/MediMind%20Google%20Sign-in%20Integration.png)
 
-![MediMind Google Sign-in Integration]()
+![MediMind Chat Interface - Medical Advice](https://github.com/Shahir-04/Medimind/blob/e4ce61e7514d50681ec12f0edb1a9afe8220269e/docs/MediMind%20Chat%20Interface%20-%20Medical%20Advice.png)
 
-![MediMind Email Verification Screen]()
+![MediMind Chat Interface - Uploaded Case Files Modal](https://github.com/Shahir-04/Medimind/blob/e4ce61e7514d50681ec12f0edb1a9afe8220269e/docs/MediMind%20Chat%20Interface%20-%20Uploaded%20Case%20Files%20Modal.png)
 
 ---
 
