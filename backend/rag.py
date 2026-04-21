@@ -25,7 +25,7 @@ def extract_pdf_chunks(file_bytes: bytes) -> list[str]:
     chunks = splitter.split_text(text_content)
     return chunks
 
-def process_and_store_pdf(file_bytes: bytes, user_email: str, filename: str):
+def process_and_store_pdf(file_bytes: bytes, user_email: str, filename: str, is_temporary: bool = False, in_chat_only: bool = False, thread_id: str = None):
     if not supabase:
         raise Exception("Supabase client is not configured.")
         
@@ -45,12 +45,15 @@ def process_and_store_pdf(file_bytes: bytes, user_email: str, filename: str):
             "user_email": user_email,
             "filename": filename,
             "content": chunk,
-            "embedding": embedding
+            "embedding": embedding,
+            "is_temporary": is_temporary,
+            "in_chat_only": in_chat_only,
+            "thread_id": thread_id
         }).execute()
         
     return f"Successfully processed and stored {len(chunks)} chunks."
     
-def search_documents(query: str, user_email: str, limit: int = 3) -> str:
+def search_documents(query: str, user_email: str, limit: int = 3, thread_id: str = None) -> str:
     if not supabase: return ""
     
     try:
@@ -61,7 +64,7 @@ def search_documents(query: str, user_email: str, limit: int = 3) -> str:
         
         results = supabase.rpc(
             "match_documents", 
-            {"query_embedding": embedding, "match_email": user_email, "match_count": limit}
+            {"query_embedding": embedding, "match_email": user_email, "match_count": limit, "match_thread_id": thread_id}
         ).execute()
         
         matches = results.data

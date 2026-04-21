@@ -4,14 +4,20 @@ from mem0 import Memory
 
 load_dotenv()
 
-# Mem0 configured with local persistent storage.
-_base_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "mem0_data")
+# Separate Mem0 instance dedicated ONLY to global bot feedback.
+# Uses ChromaDB to avoid Qdrant file lock conflicts, allowing concurrent access.
+# 
+# Storage:
+#   ChromaDB vectors → ./mem0_feedback_data/chroma/
+#   SQLite metadata  → ./mem0_feedback_data/feedback.db
 
-config = {
+_base_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "mem0_feedback_data")
+
+feedback_config = {
     "vector_store": {
         "provider": "supabase",
         "config": {
-            "collection_name": "medimind_memories",
+            "collection_name": "medimind_feedback",
             "connection_string": os.environ.get("DATABASE_URL"),
         }
     },
@@ -37,21 +43,21 @@ config = {
             "api_key": os.environ.get("OPENAI_API_KEY"),
         }
     },
-    "history_db_path": os.path.join(_base_dir, "mem0.db"),
+    "history_db_path": os.path.join(_base_dir, "feedback.db"),
 }
 
-_m = None
+_f_m = None
 
-def get_mem0():
-    """Lazy-load the persistent Mem0 client to avoid lock issues on import."""
-    global _m
-    if _m is None:
+def get_feedback_mem0():
+    """Lazy-load the persistent Mem0 feedback client to avoid lock issues on import."""
+    global _f_m
+    if _f_m is None:
         # Ensure the storage directory exists (needed for Render/production)
         if not os.path.exists(_base_dir):
             os.makedirs(_base_dir, exist_ok=True)
             
-        _m = Memory.from_config(config)
-    return _m
+        _f_m = Memory.from_config(feedback_config)
+    return _f_m
 
 # For backward compatibility during migration
-m = None # Will be initialized via getter in callers
+feedback_m = None # Will be initialized via getter in callers

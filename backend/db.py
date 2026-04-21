@@ -1,6 +1,9 @@
 import os
+import warnings
 from dotenv import load_dotenv
 from supabase import create_client, Client
+
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="supabase")
 
 load_dotenv()
 

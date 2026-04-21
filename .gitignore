@@ -2,7 +2,6 @@
 __pycache__/
 *.py[oc]
 build/
-dist/
 wheels/
 *.egg-info
 .ruff_cache/
@@ -15,9 +14,9 @@ frontend/node_modules
 frontend/.env
 .env
 error.log
-knowledge_base/
-mem0_feedback_data/
 
 
 # Local Mem0 persistent storage (Qdrant on-disk vectors + SQLite metadata)
 mem0_data/
+mem0_feedback_data/
+knowledge_base/
