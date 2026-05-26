@@ -592,7 +592,7 @@ def chat_endpoint(req: ChatRequest, background_tasks: BackgroundTasks):
 
         # Generate the AI response
         reply = agent.generate_chat_response(
-            req.user_email, req.message, history=req.history, thread_id=thread_id
+            req.user_email, req.message, history=req.history, thread_id=thread_id, image_base64=req.image
         )
 
         # Store messages in Supabase if we have a valid thread_id

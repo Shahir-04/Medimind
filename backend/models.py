@@ -38,6 +38,7 @@ class TokenResponse(BaseModel):
 class ChatRequest(BaseModel):
     user_email: str
     message: str
+    image: Optional[str] = None
     history: Optional[List[Dict[str, str]]] = []
     thread_id: Optional[str] = None
 

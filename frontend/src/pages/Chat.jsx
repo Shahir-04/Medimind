@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Paperclip, ThumbsUp, ThumbsDown, LogOut, Loader2, CheckCircle2, Bot, Sparkles, Pencil, Check, X, Sun, Moon, MessageSquarePlus, History, Files, FileText, Trash2, LayoutDashboard, Activity, Menu } from 'lucide-react';
+import { Send, Paperclip, ThumbsUp, ThumbsDown, LogOut, Loader2, CheckCircle2, Bot, Sparkles, Pencil, Check, X, Sun, Moon, MessageSquarePlus, History, Files, FileText, Trash2, LayoutDashboard, Activity, Menu, ImagePlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -24,6 +24,9 @@ export default function Chat({ session, onLogout }) {
   const [uploadStatus, setUploadStatus] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [editText, setEditText] = useState('');
+
+  const [selectedImagePreview, setSelectedImagePreview] = useState(null);
+  const [imageBase64, setImageBase64] = useState(null);
 
   const [threads, setThreads] = useState([]);
   const [activeThreadId, setActiveThreadId] = useState(null);
@@ -205,7 +208,7 @@ export default function Chat({ session, onLogout }) {
     } catch (e) { }
   };
 
-  const sendMessageToBackend = async (messageContent, historyMessages) => {
+  const sendMessageToBackend = async (messageContent, historyMessages, imgBase64 = null) => {
     const history = historyMessages
       .filter(m => (m.role === 'user' || m.role === 'ai') && m.content)
       .map(m => ({ role: m.role === 'ai' ? 'assistant' : 'user', content: m.content }));
@@ -217,7 +220,13 @@ export default function Chat({ session, onLogout }) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`
         },
-        body: JSON.stringify({ user_email: session.email, message: messageContent, history, thread_id: activeThreadId })
+        body: JSON.stringify({ 
+          user_email: session.email, 
+          message: messageContent, 
+          history, 
+          thread_id: activeThreadId,
+          image: imgBase64 || undefined
+        })
       });
 
       if (!res.ok) throw new Error('Failed to get response');
@@ -239,15 +248,25 @@ export default function Chat({ session, onLogout }) {
 
   const handleSend = async (e) => {
     e?.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() && !imageBase64) return;
 
     const currentMessages = messages;
-    const userMessage = { id: Date.now(), role: 'user', content: input };
+    const userMessage = { 
+        id: Date.now(), 
+        role: 'user', 
+        content: input || "Uploaded an image.",
+        imagePreview: selectedImagePreview
+    };
     setMessages((prev) => [...prev, userMessage]);
+    
+    const imgToSend = imageBase64;
+    
     setInput('');
     setIsTyping(true);
+    setImageBase64(null);
+    setSelectedImagePreview(null);
 
-    await sendMessageToBackend(userMessage.content, currentMessages);
+    await sendMessageToBackend(userMessage.content, currentMessages, imgToSend);
   };
 
   const handleEditMessage = async (msgId) => {
@@ -269,6 +288,28 @@ export default function Chat({ session, onLogout }) {
 
     // Re-send with the corrected message and the history before it
     await sendMessageToBackend(editText, messagesBeforeEdit);
+  };
+
+  const handleImageSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const objectUrl = URL.createObjectURL(file);
+    setSelectedImagePreview(objectUrl);
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64String = reader.result.split(',')[1];
+      setImageBase64(base64String);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = null;
+  };
+  
+  const removeImage = () => {
+    if (selectedImagePreview) URL.revokeObjectURL(selectedImagePreview);
+    setSelectedImagePreview(null);
+    setImageBase64(null);
   };
 
   const handleFileUpload = async (e) => {
@@ -542,6 +583,11 @@ export default function Chat({ session, onLogout }) {
                                   'message-ai'
                               }`}
                           >
+                            {msg.imagePreview && (
+                              <div className="mb-2">
+                                <img src={msg.imagePreview} alt="User Upload" className="max-w-[200px] rounded-lg shadow-sm border border-neutral-200/50" />
+                              </div>
+                            )}
                             {msg.role === 'ai' ? (
                               <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:mt-3 prose-headings:mb-2 prose-p:mb-2 prose-ul:my-2 prose-ol:my-2">
                                 <ReactMarkdown
@@ -641,8 +687,31 @@ export default function Chat({ session, onLogout }) {
 
           {/* Input Box */}
           <div className="absolute bottom-0 w-full bg-gradient-to-t from-background via-background/95 to-background/0 pt-12 pb-4 sm:pb-6 px-3 sm:px-4 md:px-8 z-20">
+            {selectedImagePreview && (
+              <div className="max-w-3xl mx-auto relative mb-2 animate-fade-in">
+                <div className="inline-block relative glass-card rounded-xl p-2 shadow-glow border border-primary/20 bg-background/80 backdrop-blur-md">
+                  <img src={selectedImagePreview} alt="Preview" className="h-16 w-16 object-cover rounded-lg border border-neutral-200/50" />
+                  <button 
+                    type="button" 
+                    onClick={removeImage} 
+                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-md hover:bg-red-600 hover:scale-110 transition-all z-10"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            )}
             <form onSubmit={handleSend} className="max-w-3xl mx-auto relative flex items-end glass-card rounded-2xl overflow-hidden focus-within:ring-2 focus-within:ring-primary/10 focus-within:border-primary/30 transition-all shadow-glass p-2 gap-2">
-              <div className="flex-shrink-0 relative flex items-center">
+              <div className="flex-shrink-0 relative flex items-center gap-1">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <label className="flex items-center justify-center w-10 h-10 rounded-l-xl cursor-pointer text-neutral-400 hover:text-primary hover:bg-primary/5 transition-all mb-0.5">
+                      <ImagePlus className="w-5 h-5" />
+                      <input type="file" accept="image/jpeg, image/png, image/webp" className="hidden" onChange={handleImageSelect} disabled={isTyping || isUploading} />
+                    </label>
+                  </TooltipTrigger>
+                  <TooltipContent><p>Upload Image</p></TooltipContent>
+                </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <label className="flex items-center justify-center w-10 h-10 rounded-r-xl cursor-pointer text-neutral-400 hover:text-primary hover:bg-primary/5 transition-all mb-0.5">
@@ -674,7 +743,7 @@ export default function Chat({ session, onLogout }) {
               <Button
                 type="submit"
                 size="icon"
-                disabled={isTyping || !input.trim()}
+                disabled={isTyping || (!input.trim() && !imageBase64)}
                 className="flex-shrink-0 w-10 h-10 mb-0.5 rounded-xl bg-gradient-to-br from-primary to-accent hover:from-primary/90 hover:to-accent/90 shadow-glow transition-all hover:scale-105 active:scale-95 text-white"
               >
                 <Send className="w-4 h-4 ml-0.5" />

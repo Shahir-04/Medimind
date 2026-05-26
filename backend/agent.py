@@ -37,6 +37,10 @@ KNOWLEDGE BASE RULES:
 - If suggesting medicine based on the knowledge base, always cite it: "According to the Medical Knowledge Base..."
 - Even when citing technical knowledge bases, you must translate the information into simple, easy-to-understand terms.
 
+IMAGE ANALYSIS RULE:
+- If the user provides an image, you must first verify if it is medical-related (e.g., lab reports, X-rays, visible symptoms like rashes, medical devices, prescriptions).
+- If the image is NOT related to healthcare or medicine (e.g., a car, a landscape, a random object), you MUST strictly refuse to analyze it by stating: "This image does not appear to be medical-related. Please provide a medical image for assistance." Do not describe the non-medical image or engage in non-medical conversation about it.
+
 IMPORTANT: Always include a brief disclaimer if providing direct diagnosis-like information that you are an AI and not a substitute for a doctor.
 
 TIME-AWARENESS RULES:
@@ -48,7 +52,7 @@ TIME-AWARENESS RULES:
 - When relevant, reference the timeline: e.g. "Since your cold from March has likely resolved..."
 """
 
-def generate_chat_response(user_email: str, message: str, history: list = None, thread_id: str = None) -> str:
+def generate_chat_response(user_email: str, message: str, history: list = None, thread_id: str = None, image_base64: str = None) -> str:
     now = datetime.now().strftime("%B %d, %Y at %I:%M %p")
     
     def fetch_profile():
@@ -141,7 +145,12 @@ If all items are known, you may proceed to act as a medical assistant and answer
             if content:
                 messages.append({"role": m_item.get("role", "user"), "content": content})
             
-    messages.append({"role": "user", "content": message})
+    user_content = [{"type": "text", "text": message}]
+    if image_base64:
+        img_data = image_base64 if image_base64.startswith("data:image") else f"data:image/jpeg;base64,{image_base64}"
+        user_content.append({"type": "image_url", "image_url": {"url": img_data}})
+    
+    messages.append({"role": "user", "content": user_content})
     
     try:
         response = client.chat.completions.create(
