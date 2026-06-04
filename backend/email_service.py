@@ -11,6 +11,11 @@ load_dotenv()
 
 SMTP_EMAIL = os.getenv("SMTP_EMAIL", "medimindapp@gmail.com")
 SMTP_APP_PASSWORD = os.getenv("SMTP_APP_PASSWORD", "")
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USE_SSL = os.getenv("SMTP_USE_SSL", "false").lower() == "true"
+SMTP_TIMEOUT_SECONDS = int(os.getenv("SMTP_TIMEOUT_SECONDS", "10"))
+SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "MediMind")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 
@@ -18,14 +23,8 @@ def generate_verification_code(length: int = 6) -> str:
     return "".join(secrets.choice("0123456789") for _ in range(length))
 
 
-def send_verification_email(to_email: str, code: str) -> bool:
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = "Verify your MediMind account"
-        msg["From"] = SMTP_EMAIL
-        msg["To"] = to_email
-
-        html_content = f"""
+def _verification_email_content(code: str) -> tuple[str, str]:
+    html_content = f"""
         <!DOCTYPE html>
         <html>
         <head>
@@ -62,7 +61,7 @@ def send_verification_email(to_email: str, code: str) -> bool:
         </html>
         """
 
-        text_content = f"""
+    text_content = f"""
         Welcome to MediMind!
         
         Your verification code is: {code}
@@ -71,16 +70,46 @@ def send_verification_email(to_email: str, code: str) -> bool:
         If you didn't create an account, you can safely ignore this email.
         """
 
+    return text_content, html_content
+
+
+def send_verification_email(to_email: str, code: str) -> bool:
+    if not SMTP_APP_PASSWORD:
+        print("[Email] SMTP_APP_PASSWORD is not configured")
+        return False
+
+    try:
+        text_content, html_content = _verification_email_content(code)
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = "Verify your MediMind account"
+        msg["From"] = f"{SMTP_FROM_NAME} <{SMTP_EMAIL}>"
+        msg["To"] = to_email
+
         msg.attach(MIMEText(text_content, "plain"))
         msg.attach(MIMEText(html_content, "html"))
 
         context = ssl.create_default_context()
 
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
-            server.login(SMTP_EMAIL, SMTP_APP_PASSWORD)
-            server.sendmail(SMTP_EMAIL, to_email, msg.as_string())
+        if SMTP_USE_SSL:
+            with smtplib.SMTP_SSL(
+                SMTP_HOST, SMTP_PORT, context=context, timeout=SMTP_TIMEOUT_SECONDS
+            ) as server:
+                server.login(SMTP_EMAIL, SMTP_APP_PASSWORD)
+                server.sendmail(SMTP_EMAIL, to_email, msg.as_string())
+        else:
+            with smtplib.SMTP(
+                SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT_SECONDS
+            ) as server:
+                server.ehlo()
+                server.starttls(context=context)
+                server.ehlo()
+                server.login(SMTP_EMAIL, SMTP_APP_PASSWORD)
+                server.sendmail(SMTP_EMAIL, to_email, msg.as_string())
 
-        print(f"[Email] Verification email sent to {to_email}")
+        print(
+            f"[Email] Verification email sent to {to_email} via SMTP "
+            f"{SMTP_HOST}:{SMTP_PORT} ({'SSL' if SMTP_USE_SSL else 'STARTTLS'})"
+        )
         return True
 
     except Exception as e:
