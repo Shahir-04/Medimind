@@ -6,6 +6,7 @@ from fastapi import (
     Form,
     Depends,
     BackgroundTasks,
+    Body,
     Request,
 )
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,6 +19,7 @@ import requests
 from contextlib import asynccontextmanager
 from openai import OpenAI
 from starlette.middleware.sessions import SessionMiddleware
+from typing import Optional
 
 load_dotenv()
 
@@ -101,6 +103,15 @@ app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 _title_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 
+def _send_verification_or_502(email: str, code: str) -> None:
+    """Send an OTP email and fail the request if delivery cannot be attempted."""
+    if not send_verification_email(email, code):
+        raise HTTPException(
+            status_code=502,
+            detail="Could not send verification email. Please try again later.",
+        )
+
+
 def _generate_thread_title(thread_id: str, user_message: str, ai_reply: str):
     """Background task: generate a smart thread title via LLM and update Supabase."""
     try:
@@ -163,7 +174,7 @@ def signup(req: SignupRequest):
                 "verification_code_expires": expires_at.isoformat(),
             }
         ).eq("email", req.email).execute()
-        send_verification_email(req.email, verification_code)
+        _send_verification_or_502(req.email, verification_code)
         return {
             "status": "pending_verification",
             "message": "Verification email sent. Please check your email.",
@@ -183,7 +194,7 @@ def signup(req: SignupRequest):
         }
     ).execute()
 
-    send_verification_email(req.email, verification_code)
+    _send_verification_or_502(req.email, verification_code)
 
     return {
         "status": "pending_verification",
@@ -242,6 +253,10 @@ class VerifyEmailRequest(BaseModel):
     code: str
 
 
+class ResendVerificationRequest(BaseModel):
+    email: str
+
+
 @app.post("/verify-email")
 def verify_email(req: VerifyEmailRequest):
     """Verify user email with verification code"""
@@ -290,8 +305,15 @@ def verify_email(req: VerifyEmailRequest):
 
 
 @app.post("/resend-verification")
-def resend_verification(email: str):
+def resend_verification(
+    req: Optional[ResendVerificationRequest] = Body(default=None),
+    email: Optional[str] = None,
+):
     """Resend verification email"""
+    email = req.email if req else email
+    if not email:
+        raise HTTPException(status_code=422, detail="Email is required")
+
     user = supabase.table("custom_users").select("*").eq("email", email).execute()
     if not user.data:
         raise HTTPException(status_code=404, detail="User not found")
@@ -311,7 +333,7 @@ def resend_verification(email: str):
         }
     ).eq("email", email).execute()
 
-    send_verification_email(email, verification_code)
+    _send_verification_or_502(email, verification_code)
 
     return {
         "status": "sent",

@@ -19,6 +19,16 @@ export default function Auth({ onLogin }) {
   const [verificationCode, setVerificationCode] = useState('')
   const [verifyingCode, setVerifyingCode] = useState(false)
 
+  const readApiResponse = async (res) => {
+    const contentType = res.headers.get('content-type') || ''
+    if (contentType.includes('application/json')) {
+      return res.json()
+    }
+
+    const text = await res.text()
+    return { detail: text || res.statusText || 'Request failed' }
+  }
+
   const handleAuth = async (e) => {
     e.preventDefault()
     setLoading(true)
@@ -41,7 +51,7 @@ export default function Auth({ onLogin }) {
         body: JSON.stringify(bodyData)
       })
 
-      const data = await res.json()
+      const data = await readApiResponse(res)
 
       if (!res.ok) {
         let msg = mode === 'reset' ? "Password Reset Failed" : "Authentication Failed"
@@ -82,7 +92,7 @@ export default function Auth({ onLogin }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
       })
-      const data = await res.json()
+      const data = await readApiResponse(res)
       if (!res.ok) {
         throw new Error(data.detail || 'Failed to resend verification email')
       }
@@ -107,7 +117,7 @@ export default function Auth({ onLogin }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, code: verificationCode })
       })
-      const data = await res.json()
+      const data = await readApiResponse(res)
       if (!res.ok) {
         throw new Error(data.detail || 'Invalid verification code')
       }
