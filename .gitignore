@@ -9,6 +9,7 @@ opencode.json
 graphify-out/
 tests/
 
+
 # Virtual environments
 .venv
 
