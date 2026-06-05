@@ -5,6 +5,11 @@ import { Label } from '@/components/ui/label'
 import { Loader2, Mail, Eye, EyeOff, ShieldCheck, Zap, Sun, Moon, Contact } from 'lucide-react'
 import { useTheme } from '@/lib/useTheme'
 
+const GOOGLE_OAUTH_BASE_URL =
+  import.meta.env.VITE_GOOGLE_OAUTH_BASE_URL ||
+  import.meta.env.VITE_BACKEND_URL ||
+  (import.meta.env.DEV ? 'http://localhost:8000' : 'https://medimind-backend-sb2z.onrender.com')
+
 export default function Auth({ onLogin }) {
   const { theme, setTheme, resolvedTheme } = useTheme()
   const [loading, setLoading] = useState(false)
@@ -134,7 +139,7 @@ export default function Auth({ onLogin }) {
 
   const handleOAuth = (provider) => {
     if (provider === 'Google') {
-      window.location.href = '/api/auth/google/login'
+      window.location.href = `${GOOGLE_OAUTH_BASE_URL}/auth/google/login`
     } else if (provider === 'Apple') {
       setErrorMsg('Apple login is not implemented yet.')
     } else {

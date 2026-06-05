@@ -3,6 +3,10 @@
     {
       "source": "/api/(.*)",
       "destination": "https://medimind-backend-sb2z.onrender.com/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
