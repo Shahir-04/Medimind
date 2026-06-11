@@ -397,7 +397,7 @@ export default function Auth({ onLogin }) {
                   />
                 </div>
                 <Label htmlFor="terms" className="text-[13px] text-muted-foreground leading-snug font-normal">
-                  I agree to the <a href="#" className="font-semibold text-foreground hover:text-[#3A8DED]">Terms of Service</a> and <a href="#" className="font-semibold text-foreground hover:text-[#3A8DED]">Privacy Policy</a>.
+                  I agree to the <a href="/terms" className="font-semibold text-foreground hover:text-[#3A8DED]">Terms of Service</a> and <a href="/privacy" className="font-semibold text-foreground hover:text-[#3A8DED]">Privacy Policy</a>.
                 </Label>
               </div>
             )}
@@ -459,7 +459,7 @@ export default function Auth({ onLogin }) {
           )}
 
           {!pendingVerification && (
-            <div className="mt-8 text-center">
+            <div className="mt-8 text-center space-y-4">
               <p className="text-[14px] text-muted-foreground font-medium">
                 {mode === 'login' ? "Don't have an account? " : mode === 'reset' ? "Remembered your password? " : "Already have an account? "}
                 <button
@@ -470,6 +470,11 @@ export default function Auth({ onLogin }) {
                   {mode === 'login' ? 'Create one here' : 'Log in here'}
                 </button>
               </p>
+              <div className="flex justify-center gap-4 text-xs font-semibold text-muted-foreground">
+                <a href="/privacy" className="hover:text-[#3A8DED]">Privacy</a>
+                <a href="/terms" className="hover:text-[#3A8DED]">Terms</a>
+                <a href="/contact" className="hover:text-[#3A8DED]">Contact</a>
+              </div>
             </div>
           )}
 

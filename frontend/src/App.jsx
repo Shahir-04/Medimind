@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import Auth from './pages/Auth'
 import Chat from './pages/Chat'
+import LegalPage from './pages/Legal'
 
 function App() {
   const [session, setSession] = useState(null)
@@ -63,6 +64,11 @@ function App() {
         </div>
       </div>
     )
+  }
+
+  const path = window.location.pathname
+  if (path === '/privacy' || path === '/terms' || path === '/contact') {
+    return <LegalPage type={path.slice(1)} />
   }
 
   return (
