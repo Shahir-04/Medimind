@@ -148,13 +148,13 @@ export default function Auth({ onLogin }) {
   }
 
   return (
-    <div className={`min-h-screen flex w-full flex-col lg:flex-row transition-colors duration-300 ${resolvedTheme === 'dark' ? 'bg-neutral-950 text-foreground' : 'bg-white text-neutral-900'}`}>
+    <div className={`min-h-dvh flex w-full flex-col lg:flex-row transition-colors duration-300 ${resolvedTheme === 'dark' ? 'bg-neutral-950 text-foreground' : 'bg-white text-neutral-900'}`}>
       {/* Theme Toggle Button */}
       <button
         type="button"
         onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        className={`absolute top-4 right-4 z-50 p-2.5 rounded-full transition-all hover:scale-105 shadow-sm ${resolvedTheme === 'dark' ? 'bg-neutral-800 text-neutral-200 hover:bg-neutral-700' : 'bg-neutral-100 text-neutral-800 hover:bg-neutral-200'}`}
-        title={theme === 'dark' ? 'Switch to Light mode' : 'Switch to Dark mode'}
+        className={`absolute top-3 right-4 z-50 grid size-11 place-items-center rounded-full transition-all hover:scale-105 shadow-sm ${resolvedTheme === 'dark' ? 'bg-neutral-800 text-neutral-200 hover:bg-neutral-700' : 'bg-neutral-100 text-neutral-800 hover:bg-neutral-200'}`}
+        aria-label={theme === 'dark' ? 'Switch to Light mode' : 'Switch to Dark mode'}
       >
         {resolvedTheme === 'dark' ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
       </button>
@@ -203,15 +203,15 @@ export default function Auth({ onLogin }) {
       </div>
 
       {/* Right Panel (Auth Form) */}
-      <div className="flex-1 flex flex-col justify-center items-center px-6 py-12 sm:p-12 relative z-10">
+      <div className="flex-1 flex flex-col justify-center items-center px-4 pt-16 pb-6 sm:px-12 sm:pb-12 lg:pt-12 relative z-10">
 
         {/* Mobile Logo */}
-        <div className="flex lg:hidden items-center gap-2 mb-8 text-[#3A8DED]">
+        <div className="flex lg:hidden items-center gap-2 mb-5 sm:mb-8 text-[#3A8DED]">
           <Contact className="w-8 h-8" />
           <span className="text-2xl font-bold tracking-wide text-foreground">MediMind</span>
         </div>
 
-        <div className="w-full max-w-[420px] space-y-8 animate-fade-in">
+        <div className="w-full max-w-[420px] space-y-6 sm:space-y-8 animate-fade-in">
 
           {pendingVerification ? (
             <div className="space-y-6">
@@ -222,7 +222,7 @@ export default function Auth({ onLogin }) {
                 <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight">Check Your Email</h2>
                 <p className="text-muted-foreground text-[15px] mt-3">
                   We've sent a verification code to<br />
-                  <span className="font-semibold text-foreground">{email}</span>
+                  <span className="font-semibold text-foreground [overflow-wrap:anywhere]">{email}</span>
                 </p>
               </div>
 
@@ -234,12 +234,13 @@ export default function Auth({ onLogin }) {
               )}
 
               <div className="space-y-2">
-                <div className="flex items-center justify-center gap-2">
+                <div className="mx-auto grid w-full max-w-[328px] grid-cols-6 gap-1.5 sm:gap-2">
                   {[0, 1, 2, 3, 4, 5].map((i) => (
                     <input
                       key={i}
                       type="text"
                       inputMode="numeric"
+                      aria-label={`Verification digit ${i + 1}`}
                       maxLength={1}
                       value={verificationCode[i] || ''}
                       onPaste={(e) => {
@@ -265,7 +266,7 @@ export default function Auth({ onLogin }) {
                         }
                       }}
                       id={`otp-${i}`}
-                      className="w-12 h-14 text-center text-xl font-bold bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg focus:ring-2 focus:ring-[#3A8DED] focus:border-[#3A8DED] outline-none"
+                      className="min-w-0 w-full h-12 sm:h-14 text-center text-xl font-bold bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg focus:ring-2 focus:ring-[#3A8DED] focus:border-[#3A8DED] outline-none"
                     />
                   ))}
                 </div>
@@ -333,7 +334,7 @@ export default function Auth({ onLogin }) {
           )}
 
           {pendingVerification ? null : (
-          <form onSubmit={handleAuth} className="space-y-5">
+          <form onSubmit={handleAuth} className="space-y-4 sm:space-y-5">
             <div className="space-y-2">
               <Label htmlFor="email" className="text-[13px] font-semibold text-foreground/80">Email Address</Label>
               <div className="relative">
@@ -344,14 +345,14 @@ export default function Auth({ onLogin }) {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  className={`pl-4 pr-10 h-12 bg-neutral-100/50 dark:bg-neutral-900/50 border-neutral-200 dark:border-neutral-800 rounded-xl focus-visible:ring-[#3A8DED] ${resolvedTheme === 'dark' ? 'text-white' : 'text-neutral-900'}`}
+                  className={`pl-4 pr-10 h-12 text-base bg-neutral-100/50 dark:bg-neutral-900/50 border-neutral-200 dark:border-neutral-800 rounded-xl focus-visible:ring-[#3A8DED] ${resolvedTheme === 'dark' ? 'text-white' : 'text-neutral-900'}`}
                 />
                 <Mail className="absolute right-3.5 top-3.5 h-5 w-5 text-neutral-400 pointer-events-none" />
               </div>
             </div>
 
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-x-2">
                 <Label htmlFor="password" className="text-[13px] font-semibold text-foreground/80">
                   {mode === 'reset' ? 'New Password' : 'Password'}
                 </Label>
@@ -374,12 +375,13 @@ export default function Auth({ onLogin }) {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   minLength={8}
-                  className={`pl-4 pr-10 h-12 bg-neutral-100/50 dark:bg-neutral-900/50 border-neutral-200 dark:border-neutral-800 rounded-xl focus-visible:ring-[#3A8DED] ${resolvedTheme === 'dark' ? 'text-white' : 'text-neutral-900'}`}
+                  className={`pl-4 pr-10 h-12 text-base bg-neutral-100/50 dark:bg-neutral-900/50 border-neutral-200 dark:border-neutral-800 rounded-xl focus-visible:ring-[#3A8DED] ${resolvedTheme === 'dark' ? 'text-white' : 'text-neutral-900'}`}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-3.5 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors focus:outline-none"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  className="absolute inset-y-0 right-0.5 grid w-11 place-items-center rounded-xl text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors focus-visible:outline-primary"
                 >
                   {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                 </button>
@@ -434,7 +436,7 @@ export default function Auth({ onLogin }) {
           )}
 
           {(mode === 'login' || mode === 'signup') && !pendingVerification && (
-            <div className="mt-8 space-y-6">
+            <div className="space-y-4 sm:space-y-6">
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t border-neutral-200 dark:border-neutral-800"></div>
@@ -459,7 +461,7 @@ export default function Auth({ onLogin }) {
           )}
 
           {!pendingVerification && (
-            <div className="mt-8 text-center space-y-4">
+            <div className="text-center space-y-2 sm:space-y-4">
               <p className="text-[14px] text-muted-foreground font-medium">
                 {mode === 'login' ? "Don't have an account? " : mode === 'reset' ? "Remembered your password? " : "Already have an account? "}
                 <button
@@ -470,10 +472,10 @@ export default function Auth({ onLogin }) {
                   {mode === 'login' ? 'Create one here' : 'Log in here'}
                 </button>
               </p>
-              <div className="flex justify-center gap-4 text-xs font-semibold text-muted-foreground">
-                <a href="/privacy" className="hover:text-[#3A8DED]">Privacy</a>
-                <a href="/terms" className="hover:text-[#3A8DED]">Terms</a>
-                <a href="/contact" className="hover:text-[#3A8DED]">Contact</a>
+              <div className="flex flex-wrap justify-center gap-x-1 text-xs font-semibold text-muted-foreground">
+                <a href="/privacy" className="inline-flex min-h-11 items-center px-2 hover:text-[#3A8DED]">Privacy</a>
+                <a href="/terms" className="inline-flex min-h-11 items-center px-2 hover:text-[#3A8DED]">Terms</a>
+                <a href="/contact" className="inline-flex min-h-11 items-center px-2 hover:text-[#3A8DED]">Contact</a>
               </div>
             </div>
           )}

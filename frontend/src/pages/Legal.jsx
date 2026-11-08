@@ -114,29 +114,29 @@ export default function LegalPage({ type = 'privacy' }) {
   const page = pageCopy[type] || pageCopy.privacy
 
   return (
-    <main className="min-h-screen bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-50">
+    <main className="min-h-dvh bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-50">
       <header className="border-b border-neutral-200 bg-white/95 dark:border-neutral-800 dark:bg-neutral-950/95">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-5">
+        <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-x-4 px-4 py-2 sm:px-6 sm:py-4">
           <a href="/" className="flex items-center gap-2 text-[#2E81D4]">
             <Contact className="h-7 w-7" />
             <span className="text-lg font-bold tracking-wide text-neutral-950 dark:text-white">MediMind</span>
           </a>
-          <nav className="flex items-center gap-4 text-sm font-medium text-neutral-600 dark:text-neutral-300">
-            <a href="/privacy" className="hover:text-[#2E81D4]">Privacy</a>
-            <a href="/terms" className="hover:text-[#2E81D4]">Terms</a>
-            <a href="/contact" className="hover:text-[#2E81D4]">Contact</a>
+          <nav className="flex flex-wrap items-center gap-x-3 sm:gap-x-4 text-sm font-medium text-neutral-600 dark:text-neutral-300">
+            <a href="/privacy" className="inline-flex min-h-11 items-center hover:text-[#2E81D4]">Privacy</a>
+            <a href="/terms" className="inline-flex min-h-11 items-center hover:text-[#2E81D4]">Terms</a>
+            <a href="/contact" className="inline-flex min-h-11 items-center hover:text-[#2E81D4]">Contact</a>
           </nav>
         </div>
       </header>
 
-      <div className="mx-auto max-w-4xl px-6 py-12">
-        <div className="mb-10 flex items-start gap-4">
+      <div className="mx-auto max-w-4xl px-4 py-7 [overflow-wrap:anywhere] sm:px-6 sm:py-12">
+        <div className="mb-8 flex flex-col items-start gap-3 sm:mb-10 sm:flex-row sm:gap-4">
           <div className="mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded bg-[#E8F3FF] text-[#2E81D4] dark:bg-[#123558]">
             {type === 'terms' ? <ShieldCheck className="h-6 w-6" /> : type === 'contact' ? <Mail className="h-6 w-6" /> : <HeartPulse className="h-6 w-6" />}
           </div>
           <div>
             <p className="mb-2 text-sm font-semibold text-[#2E81D4]">Last updated {UPDATED_AT}</p>
-            <h1 className="text-4xl font-extrabold tracking-tight">{page.title}</h1>
+            <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">{page.title}</h1>
             <p className="mt-4 max-w-3xl text-base leading-7 text-neutral-600 dark:text-neutral-300">{page.intro}</p>
           </div>
         </div>

@@ -53,7 +53,7 @@ function App() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-neutral-50 via-blue-50/20 to-sky-50/10 flex items-center justify-center">
+      <div className="min-h-dvh bg-gradient-to-br from-neutral-50 via-blue-50/20 to-sky-50/10 flex items-center justify-center">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-glow animate-pulse-soft">
             <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
@@ -72,15 +72,13 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-background font-sans text-foreground antialiased">
+    <div className="bg-background font-sans text-foreground antialiased">
       {!session ? (
-        <div className="flex items-center justify-center min-h-screen">
-          <Auth onLogin={(email, token) => {
-            sessionStorage.setItem('token', token)
-            sessionStorage.setItem('email', email)
-            setSession({ access_token: token, email: email })
-          }} />
-        </div>
+        <Auth onLogin={(email, token) => {
+          sessionStorage.setItem('token', token)
+          sessionStorage.setItem('email', email)
+          setSession({ access_token: token, email: email })
+        }} />
       ) : (
         <Chat session={session} onLogout={() => {
           sessionStorage.removeItem('token')
