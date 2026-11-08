@@ -2,6 +2,9 @@ import os
 from dotenv import load_dotenv
 from mem0 import Memory
 
+from backend.embeddings import EMBEDDING_DIMENSIONS, get_mem0_embedder_config
+from backend.llm import get_mem0_llm_config
+
 load_dotenv()
 
 # Mem0 configured with local persistent storage.
@@ -13,28 +16,7 @@ config = {
         "config": {
             "collection_name": "medimind_memories",
             "connection_string": os.environ.get("DATABASE_URL"),
-        }
-    },
-    "llm": {
-        "provider": "openai",
-        "config": {
-            "model": "gpt-4o-mini",
-            "temperature": 0,
-            "api_key": os.environ.get("OPENAI_API_KEY"),
-        }
-        # "provider": "openai",
-        # "config": {
-        #     "model": "openai/gpt-oss-120b:free",
-        #     "temperature": 0,
-        #     "api_key": os.environ.get("OPENROUTER_API_KEY"),
-        #     "openai_base_url": "https://openrouter.ai/api/v1",
-        # }
-    },
-    "embedder": {
-        "provider": "openai",
-        "config": {
-            "model": "text-embedding-3-small",
-            "api_key": os.environ.get("OPENAI_API_KEY"),
+            "embedding_model_dims": EMBEDDING_DIMENSIONS,
         }
     },
     "history_db_path": os.path.join(_base_dir, "mem0.db"),
@@ -50,7 +32,11 @@ def get_mem0():
         if not os.path.exists(_base_dir):
             os.makedirs(_base_dir, exist_ok=True)
             
-        _m = Memory.from_config(config)
+        _m = Memory.from_config({
+            **config,
+            "llm": get_mem0_llm_config(),
+            "embedder": get_mem0_embedder_config(),
+        })
     return _m
 
 # For backward compatibility during migration

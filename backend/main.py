@@ -17,7 +17,6 @@ import threading
 import time
 import requests
 from contextlib import asynccontextmanager
-from openai import OpenAI
 from starlette.middleware.sessions import SessionMiddleware
 from typing import Optional
 
@@ -26,6 +25,7 @@ load_dotenv()
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
 from backend.db import supabase
+from backend.llm import get_chat_model
 from backend.mem0_config import get_mem0
 from backend.mem0_feedback_config import get_feedback_mem0
 
@@ -100,8 +100,6 @@ app.add_middleware(
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "medimind_local_secret_key_needs_32_bytes_min")
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
-_title_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-
 
 def _send_verification_or_502(email: str, code: str) -> None:
     """Send an OTP email and fail the request if delivery cannot be attempted."""
@@ -115,9 +113,9 @@ def _send_verification_or_502(email: str, code: str) -> None:
 def _generate_thread_title(thread_id: str, user_message: str, ai_reply: str):
     """Background task: generate a smart thread title via LLM and update Supabase."""
     try:
-        resp = _title_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
+        model = get_chat_model(temperature=0.5, max_tokens=20)
+        response = model.invoke(
+            [
                 {
                     "role": "system",
                     "content": "Generate a short, descriptive title (max 6 words) for this conversation. No quotes, no punctuation at the end. Reply with ONLY the title.",
@@ -127,10 +125,8 @@ def _generate_thread_title(thread_id: str, user_message: str, ai_reply: str):
                     "content": f"User: {user_message}\nAssistant: {ai_reply}",
                 },
             ],
-            temperature=0.5,
-            max_tokens=20,
         )
-        title = resp.choices[0].message.content.strip().strip("\"'")
+        title = response.text.strip().strip("\"'")
         if title and supabase:
             supabase.table("chat_threads").update({"title": title}).eq(
                 "id", thread_id
@@ -557,9 +553,9 @@ def get_symptoms(user_email: str):
         combined = "\n\n".join(sections)
         current_date_str = datetime.now().strftime("%B %d, %Y")
 
-        resp = _title_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
+        model = get_chat_model(temperature=0, max_tokens=300)
+        response = model.invoke(
+            [
                 {
                     "role": "system",
                     "content": (
@@ -579,10 +575,8 @@ def get_symptoms(user_email: str):
                 },
                 {"role": "user", "content": combined},
             ],
-            temperature=0,
-            max_tokens=300,
         )
-        raw = resp.choices[0].message.content.strip()
+        raw = response.text.strip()
         # Handle markdown-wrapped JSON
         if raw.startswith("```"):
             raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()

@@ -34,12 +34,13 @@ MediMind is a state-of-the-art AI medical assistant designed to provide personal
 ## Tech Stack
 
 ### AI / Machine Learning
-- **Model**: OpenAI GPT (GPT-4o/4o-mini) — *Fine-tuned on medical datasets for clinical accuracy.*
+- **Model**: Gemma 4 31B on Ollama Cloud through LangChain `ChatOllama`.
+- **Embeddings**: Gemini Embedding 2 at 1,536 dimensions for documents, reference material, and Mem0.
 - **Memory**: Mem0 for user-level history persistence and cross-session retrieval.
 - **Vector Search**: Pinecone (Reference Knowledge) & Supabase pgvector (Patient Files).
 
 ### Backend
-- **Framework**: FastAPI (Python 3.10+)
+- **Framework**: FastAPI (Python 3.13+)
 - **Database**: Supabase (PostgreSQL) for user data and chat history.
 - **Authentication**: JWT-based secure authentication with Supabase integration.
 
@@ -55,29 +56,21 @@ MediMind is a state-of-the-art AI medical assistant designed to provide personal
 
 ### Prerequisites
 - Node.js (v18+)
-- Python (3.10+)
+- Python (3.13+)
 - Supabase Account
-- OpenAI API Key
+- Ollama Cloud API key for generation
+- Gemini API key for embeddings
 - Pinecone Account
 
 ### Backend Setup
-1. Navigate to the backend directory:
+1. From the project root, install the locked dependencies using **uv**:
    ```bash
-   cd backend
+   uv sync --locked
    ```
-2. Create and activate a virtual environment using **uv**:
+2. Configure the environment variables below. If upgrading an existing instance, re-embed its stored vectors before starting the new backend.
+3. Start the server:
    ```bash
-   uv venv
-   source .venv/bin/activate  # Windows: .venv\Scripts\activate
-   ```
-3. Install dependencies:
-   ```bash
-   uv pip install -r requirements.txt
-   ```
-4. Configure environment variables (see Environment Variables section below).
-5. Start the server:
-   ```bash
-   uvicorn main:app --reload
+   uv run --locked uvicorn backend.main:app --reload
    ```
 
 ### Frontend Setup
@@ -98,11 +91,19 @@ MediMind is a state-of-the-art AI medical assistant designed to provide personal
 
 ## Environment Variables
 
-Create a `.env` file in the root/backend directory:
+Create a `.env` file in the project root and generate an Ollama Cloud API key. [Ollama API keys](https://ollama.com/settings/keys)
+
+The hosted API uses `gemma4:31b` for Gemma 4 31B Cloud. [Ollama Cloud setup](https://docs.ollama.com/cloud)
+
+Generate a `GEMINI_API_KEY` for embedding requests. [Gemini API keys](https://aistudio.google.com/apikey)
 
 ```env
-# AI Configuration
-OPENAI_API_KEY=your_openai_key
+# LLM generation via Ollama Cloud
+OLLAMA_API_KEY=your_ollama_api_key
+OLLAMA_MODEL=gemma4:31b
+
+# Gemini embeddings
+GEMINI_API_KEY=your_gemini_api_key
 
 # Database (Supabase)
 SUPABASE_URL=your_supabase_url
@@ -113,6 +114,19 @@ DATABASE_URL=your_supabase_postgresql_connection_string
 PINECONE_API_KEY=your_pinecone_key
 PINECONE_INDEX_NAME=your_index_name
 ```
+
+### Migrating existing embeddings
+
+OpenAI and Gemini vectors use different embedding spaces. Existing installations must regenerate vectors from the stored source text. [Gemini Embedding 2 documentation](https://ai.google.dev/gemini-api/docs/embeddings)
+
+Back up Supabase and stop the backend and any indexing jobs. From the project root, use the same `DATABASE_URL` and Pinecone index as the backend and run:
+
+```bash
+uv run --locked -m scripts.reembed_vectors postgres
+uv run --locked -m scripts.reembed_vectors pinecone
+```
+
+The Postgres command replaces vectors in one transaction and keeps document text, memory metadata, and row IDs. The Pinecone command copies records from the default namespace of a serverless index into `gemini-embedding-2`. If you have the source PDFs, you can also rebuild Pinecone with `uv run --locked scripts/index_kb.py` after putting them in `knowledge_base/`. Start the new backend after the required migrations succeed.
 
 ---
 

@@ -1,11 +1,8 @@
 import io
-import os
 from pypdf import PdfReader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from openai import OpenAI
 from backend.db import supabase
-
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+from backend.embeddings import embed_documents, embed_search_query
 
 def extract_pdf_chunks(file_bytes: bytes) -> list[str]:
     reader = PdfReader(io.BytesIO(file_bytes))
@@ -26,6 +23,7 @@ def extract_pdf_chunks(file_bytes: bytes) -> list[str]:
     return chunks
 
 def process_and_store_pdf(file_bytes: bytes, user_email: str, filename: str, is_temporary: bool = False, in_chat_only: bool = False, thread_id: str = None):
+    """Store the extracted PDF chunks and their vectors with the user's file scope."""
     if not supabase:
         raise Exception("Supabase client is not configured.")
         
@@ -33,12 +31,7 @@ def process_and_store_pdf(file_bytes: bytes, user_email: str, filename: str, is_
     if not chunks:
         return "No text extracted from PDF."
     
-    response = client.embeddings.create(
-        input=chunks,
-        model="text-embedding-3-small"
-    )
-    
-    embeddings = [data.embedding for data in response.data]
+    embeddings = embed_documents((filename, chunk) for chunk in chunks)
     
     for chunk, embedding in zip(chunks, embeddings):
         supabase.table("documents").insert({
@@ -54,13 +47,11 @@ def process_and_store_pdf(file_bytes: bytes, user_email: str, filename: str, is_
     return f"Successfully processed and stored {len(chunks)} chunks."
     
 def search_documents(query: str, user_email: str, limit: int = 3, thread_id: str = None) -> str:
+    """Retrieve matching case file text for the user and chat thread."""
     if not supabase: return ""
     
     try:
-        embedding = client.embeddings.create(
-            input=query,
-            model="text-embedding-3-small"
-        ).data[0].embedding
+        embedding = embed_search_query(query)
         
         results = supabase.rpc(
             "match_documents", 

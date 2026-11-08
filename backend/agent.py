@@ -1,21 +1,12 @@
-import os
 import concurrent.futures
 from datetime import datetime
-from openai import OpenAI
+from backend.llm import get_chat_model
 from backend.mem0_config import get_mem0
 from backend.mem0_feedback_config import get_feedback_mem0
 from backend.pinecone_helper import get_pinecone_kb
 import backend.rag as rag
 
 GLOBAL_FEEDBACK_ID = "medimind_global_feedback"
-
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-
-# OpenRouter Configuration
-# client = OpenAI(
-#     base_url="https://openrouter.ai/api/v1",
-#     api_key=os.environ.get("OPENROUTER_API_KEY")
-# )
 
 SYSTEM_PROMPT = """
 You are MediMind, a personalized AI medical assistant.
@@ -49,6 +40,7 @@ TIME-AWARENESS RULES:
 """
 
 def generate_chat_response(user_email: str, message: str, history: list = None, thread_id: str = None) -> str:
+    """Build the conversation with retrieved context and generate a reply."""
     now = datetime.now().strftime("%B %d, %Y at %I:%M %p")
     
     def fetch_profile():
@@ -128,12 +120,8 @@ DO NOT offer medical assistance, DO NOT ask "How can I help you today?", and DO 
 If all items are known, you may proceed to act as a medical assistant and answer their queries normally.
 """
     
-    dynamic_system_prompt = SYSTEM_PROMPT + "\n" + profile_checklist_rule
-
-    messages = [
-        {"role": "system", "content": dynamic_system_prompt},
-        {"role": "system", "content": sys_content},
-    ]
+    system_content = "\n\n".join([SYSTEM_PROMPT, profile_checklist_rule, sys_content])
+    messages = [{"role": "system", "content": system_content}]
     
     if history:
         for m_item in history:
@@ -144,23 +132,10 @@ If all items are known, you may proceed to act as a medical assistant and answer
     messages.append({"role": "user", "content": message})
     
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=messages,
-            temperature=0.7,
-            max_tokens=5000
-        )
-        
-        # Using OpenRouter Free OSS Model
-        # response = client.chat.completions.create(
-        #     model="openai/gpt-oss-120b:free",
-        #     messages=messages,
-        #     temperature=0.2
-        # )
-        ai_reply = response.choices[0].message.content
+        model = get_chat_model(temperature=0.7, max_tokens=5000)
+        return model.invoke(messages).text
     except Exception as e:
         return f"Error computing AI response: {str(e)}"
-    return ai_reply
 
 def store_chat_memory(user_email: str, message: str, ai_reply: str):
     try:

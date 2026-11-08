@@ -1,12 +1,16 @@
 import os
+from itertools import batched
+
 from pinecone import Pinecone
-from openai import OpenAI
 from dotenv import load_dotenv
+
+from backend.embeddings import EMBEDDING_BATCH_SIZE, EMBEDDING_MODEL, embed_documents, embed_search_query
 
 load_dotenv()
 
 class PineconeHelper:
     def __init__(self):
+        """Connect to the configured knowledge base index."""
         self.api_key = os.getenv("PINECONE_API_KEY")
         self.index_name = os.getenv("PINECONE_INDEX_NAME")
         
@@ -15,44 +19,28 @@ class PineconeHelper:
             
         self.pc = Pinecone(api_key=self.api_key)
         self.index = self.pc.Index(self.index_name)
-        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        
-    def get_embedding(self, text: str) -> list[float]:
-        response = self.client.embeddings.create(
-            input=[text],
-            model="text-embedding-3-small"
-        )
-        return response.data[0].embedding
         
     def upsert_chunks(self, chunks: list[str], filename: str):
-        """Generates embeddings and upserts chunks to Pinecone."""
-        vectors = []
-        for i, chunk in enumerate(chunks):
-            embedding = self.get_embedding(chunk)
-            vectors.append({
-                "id": f"{filename}_{i}",
-                "values": embedding,
-                "metadata": {
-                    "text": chunk,
-                    "source": filename,
-                    "index": i
+        """Embed reference chunks and store them in the model's namespace."""
+        for batch in batched(enumerate(chunks), EMBEDDING_BATCH_SIZE):
+            embeddings = embed_documents((filename, chunk) for _, chunk in batch)
+            vectors = [
+                {
+                    "id": f"{filename}_{index}",
+                    "values": embedding,
+                    "metadata": {"text": chunk, "source": filename, "index": index},
                 }
-            })
-            
-            # Batch upsert every 50 vectors
-            if len(vectors) >= 50:
-                self.index.upsert(vectors=vectors)
-                vectors = []
-                
-        if vectors:
-            self.index.upsert(vectors=vectors)
+                for (index, chunk), embedding in zip(batch, embeddings, strict=True)
+            ]
+            self.index.upsert(vectors=vectors, namespace=EMBEDDING_MODEL)
             
     def search(self, query: str, limit: int = 3) -> str:
         """Searches Pinecone and returns an aggregated context string."""
         try:
-            query_embedding = self.get_embedding(query)
+            query_embedding = embed_search_query(query)
             results = self.index.query(
                 vector=query_embedding,
+                namespace=EMBEDDING_MODEL,
                 top_k=limit,
                 include_metadata=True
             )
