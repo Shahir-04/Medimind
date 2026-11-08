@@ -514,15 +514,14 @@ export default function Chat({ session, onLogout }) {
             >
               <Menu className="w-5 h-5" />
             </button>
-            <span className="font-bold text-gradient lg:hidden">MediMind</span>
             <button
               onClick={() => setIsDashboardOpen(!isDashboardOpen)}
               aria-expanded={isDashboardOpen}
               aria-controls={isDashboardOpen ? 'chat-dashboard' : undefined}
-              className={`flex min-h-11 shrink-0 items-center gap-1.5 px-2.5 sm:px-4 glass-card border rounded-xl text-sm font-semibold transition-colors shadow-subtle ${isDashboardOpen ? 'bg-primary/10 border-primary/30 text-primary' : 'border-neutral-200/50 dark:border-neutral-700/50 text-muted-foreground hover:text-primary hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50'}`}
+              className={`flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 lg:px-4 glass-card border rounded-xl text-sm font-semibold transition-colors shadow-subtle ${isDashboardOpen ? 'bg-primary/10 border-primary/30 text-primary' : 'border-neutral-200/50 dark:border-neutral-700/50 text-muted-foreground hover:text-primary hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50'}`}
             >
-              <LayoutDashboard className="w-4 h-4" />
-              Dashboard
+              <LayoutDashboard className="size-5 lg:size-4" />
+              <span className="sr-only lg:not-sr-only">Dashboard</span>
             </button>
           </header>
 
