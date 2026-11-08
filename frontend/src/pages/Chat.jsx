@@ -49,6 +49,15 @@ export default function Chat({ session, onLogout }) {
   const messageListRef = useRef(null);
   const fileInputRef = useRef(null);
 
+  // Replies and file cards can follow the latest user text message.
+  const editableMessageIndex = isTyping ? -1 : messages.findLastIndex(m => m.role === 'user' && !m.isFile);
+
+  // Discard the draft when editing ends or the conversation changes.
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditText('');
+  };
+
   // Scroll the transcript without moving the page or the composer.
   useEffect(() => {
     const messageList = messageListRef.current;
@@ -155,15 +164,15 @@ export default function Chat({ session, onLogout }) {
     }
   }, [session, activeThreadId]);
 
+  // Keep the active thread ID and its transcript in sync for sends and edits.
   const loadThread = async (threadId) => {
-    setActiveThreadId(threadId);
     try {
       const res = await fetch(`/api/messages/${threadId}`);
       if (res.ok) {
         const data = await res.json();
-        if (data.messages && data.messages.length > 0) {
-          setMessages(data.messages.map(m => ({ id: m.id, role: m.role, content: m.content })));
-        }
+        cancelEdit();
+        setActiveThreadId(threadId);
+        setMessages((data.messages || []).map(m => ({ id: m.id, role: m.role, content: m.content })));
       }
     } catch (e) { }
   };
@@ -178,8 +187,10 @@ export default function Chat({ session, onLogout }) {
     } catch (e) { }
   };
 
+  // Reset the transcript and its edit draft when starting a conversation.
   const startNewChat = () => {
     cleanupTempFiles();
+    cancelEdit();
     setActiveThreadId(null);
     setMessages([{ id: 1, role: 'ai', content: "Welcome to MediMind! 🌿\n\nHow can I help you today?" }]);
   };
@@ -270,12 +281,14 @@ export default function Chat({ session, onLogout }) {
     }
   };
 
+  // Sending a new message supersedes any open edit draft.
   const handleSend = async (e) => {
     e?.preventDefault();
-    if (!input.trim()) return;
+    if (isTyping || !input.trim()) return;
 
     const currentMessages = messages;
     const userMessage = { id: Date.now(), role: 'user', content: input };
+    cancelEdit();
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
     setIsTyping(true);
@@ -283,25 +296,24 @@ export default function Chat({ session, onLogout }) {
     await sendMessageToBackend(userMessage.content, currentMessages);
   };
 
+  // Resend the latest user message with the history that preceded it.
   const handleEditMessage = async (msgId) => {
-    if (!editText.trim()) return;
+    const message = messages[editableMessageIndex];
+    if (!message || message.id !== msgId || editingId !== msgId || !editText.trim()) return;
 
-    // Find the index of the message being edited
-    const msgIndex = messages.findIndex(m => m.id === msgId);
-    if (msgIndex === -1) return;
+    const messagesBeforeEdit = messages.slice(0, editableMessageIndex);
+    const editedMessage = { ...message, content: editText };
 
-    // Keep all messages before the edited one, then add the edited message
-    const messagesBeforeEdit = messages.slice(0, msgIndex);
-    const editedMessage = { ...messages[msgIndex], content: editText };
-    const newMessages = [...messagesBeforeEdit, editedMessage];
-
-    setMessages(newMessages);
-    setEditingId(null);
-    setEditText('');
+    // Replace the old reply while keeping any uploads made after the message.
+    setMessages(prev => [
+      ...prev.slice(0, editableMessageIndex),
+      editedMessage,
+      ...prev.slice(editableMessageIndex + 1).filter(m => m.isFile),
+    ]);
+    cancelEdit();
     setIsTyping(true);
 
-    // Re-send with the corrected message and the history before it
-    await sendMessageToBackend(editText, messagesBeforeEdit);
+    await sendMessageToBackend(editedMessage.content, messagesBeforeEdit);
   };
 
   const handleFileUpload = async (e) => {
@@ -529,7 +541,7 @@ export default function Chat({ session, onLogout }) {
 
                   <div className={`flex min-w-0 max-w-[88%] flex-col gap-1 xl:max-w-[75%] ${msg.role === 'user' ? 'items-end' : 'items-start'} ${editingId === msg.id ? 'w-full' : ''}`}>
                     {/* Editing mode for user messages */}
-                    {msg.role === 'user' && editingId === msg.id ? (
+                    {idx === editableMessageIndex && editingId === msg.id ? (
                       <div className="flex w-full max-w-md flex-wrap items-center justify-end gap-2">
                         <textarea
                           aria-label="Edit message text"
@@ -541,8 +553,7 @@ export default function Chat({ session, onLogout }) {
                               handleEditMessage(msg.id);
                             }
                             if (e.key === 'Escape') {
-                              setEditingId(null);
-                              setEditText('');
+                              cancelEdit();
                             }
                           }}
                           className="min-h-11 min-w-0 basis-full sm:flex-1 px-3 py-2.5 rounded-xl border border-primary/30 bg-white/90 dark:bg-neutral-800/90 dark:text-foreground text-base font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all shadow-subtle resize-none overflow-y-auto"
@@ -564,7 +575,7 @@ export default function Chat({ session, onLogout }) {
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <button
-                              onClick={() => { setEditingId(null); setEditText(''); }}
+                              onClick={cancelEdit}
                               aria-label="Cancel edit"
                               className="grid size-11 shrink-0 place-items-center rounded-lg bg-neutral-100 text-neutral-500 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700 transition-all shadow-subtle"
                             >
@@ -612,7 +623,7 @@ export default function Chat({ session, onLogout }) {
                           </div>
                         </div>
 
-                        {msg.role === 'user' && !msg.isFile && !isTyping && (
+                        {idx === editableMessageIndex && (
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <button
