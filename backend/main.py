@@ -8,6 +8,7 @@ from fastapi import (
     BackgroundTasks,
     Body,
     Request,
+    Response,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
@@ -24,7 +25,7 @@ load_dotenv()
 
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
-from backend.db import supabase
+from backend.db import check_supabase_connection, supabase
 from backend.llm import get_chat_model
 from backend.mem0_config import get_mem0
 from backend.mem0_feedback_config import get_feedback_mem0
@@ -57,7 +58,7 @@ def keep_awake(url: str):
         try:
             # 14 minutes = 840 seconds (safely under Render's 15min limit)
             response = requests.get(health_url, timeout=10)
-            print(f"[Keep-Alive] Ping successful! Status Code: {response.status_code}")
+            print(f"[Keep-Alive] Ping returned HTTP {response.status_code}")
         except Exception as e:
             print(f"[Keep-Alive] Error: {e}")
 
@@ -144,10 +145,16 @@ def read_root():
 
 
 @app.get("/health")
-def health_check():
+def health_check(response: Response):
+    """Report whether the backend can query Supabase."""
+    supabase_connected = check_supabase_connection()
+    response.headers["Cache-Control"] = "no-store"
+    if not supabase_connected:
+        response.status_code = 503
+
     return {
-        "status": "healthy",
-        "supabase_connected": supabase is not None,
+        "status": "healthy" if supabase_connected else "unhealthy",
+        "supabase_connected": supabase_connected,
     }
 
 
