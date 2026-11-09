@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -23,6 +23,28 @@ export default function Auth({ onLogin }) {
   const [pendingVerification, setPendingVerification] = useState(false)
   const [verificationCode, setVerificationCode] = useState('')
   const [verifyingCode, setVerifyingCode] = useState(false)
+  const [resendAvailableAt, setResendAvailableAt] = useState(0)
+  const [resendSeconds, setResendSeconds] = useState(0)
+
+  useEffect(() => {
+    if (!resendAvailableAt) return
+
+    // Use the deadline so time spent in an inactive tab still counts.
+    const timer = window.setInterval(() => {
+      const seconds = Math.max(0, Math.ceil((resendAvailableAt - Date.now()) / 1000))
+      setResendSeconds(seconds)
+      if (seconds === 0) window.clearInterval(timer)
+    }, 1000)
+
+    return () => window.clearInterval(timer)
+  }, [resendAvailableAt])
+
+  // Start or synchronize the button countdown using the server's remaining wait.
+  const startResendCooldown = (seconds) => {
+    const wait = Math.max(0, Number(seconds) || 0)
+    setResendSeconds(wait)
+    setResendAvailableAt(wait ? Date.now() + wait * 1000 : 0)
+  }
 
   const readApiResponse = async (res) => {
     const contentType = res.headers.get('content-type') || ''
@@ -34,6 +56,7 @@ export default function Auth({ onLogin }) {
     return { detail: text || res.statusText || 'Request failed' }
   }
 
+  // Submit the selected auth form and synchronize the cooldown when entering verification.
   const handleAuth = async (e) => {
     e.preventDefault()
     setLoading(true)
@@ -64,13 +87,16 @@ export default function Auth({ onLogin }) {
           msg = Array.isArray(data.detail) ? data.detail[0].msg : data.detail
         }
         if (res.status === 403 && msg.includes('verify')) {
+          startResendCooldown(res.headers.get('Retry-After'))
           setPendingVerification(true)
           setSuccessMsg('Please verify your email to log in.')
+          return
         }
         throw new Error(msg)
       }
 
       if (mode === 'signup') {
+        startResendCooldown(data.resend_after_seconds ?? 60)
         setPendingVerification(true)
         setSuccessMsg(data.message || 'Verification email sent! Check your inbox.')
         setPassword('')
@@ -88,9 +114,13 @@ export default function Auth({ onLogin }) {
     }
   }
 
+  // Request a fresh code and restart the countdown after it is sent.
   const handleResendVerification = async () => {
+    if (loading || resendSeconds > 0) return
+
     setLoading(true)
     setErrorMsg('')
+    setSuccessMsg('')
     try {
       const res = await fetch('/api/resend-verification', {
         method: 'POST',
@@ -98,9 +128,16 @@ export default function Auth({ onLogin }) {
         body: JSON.stringify({ email })
       })
       const data = await readApiResponse(res)
+      const retryAfter = Number(res.headers.get('Retry-After'))
+      if (res.status === 429 && retryAfter > 0) {
+        startResendCooldown(retryAfter)
+        return
+      }
       if (!res.ok) {
         throw new Error(data.detail || 'Failed to resend verification email')
       }
+      startResendCooldown(data.resend_after_seconds ?? 60)
+      setVerificationCode('')
       setSuccessMsg(data.message || 'Verification email resent!')
     } catch (err) {
       setErrorMsg(err.message)
@@ -109,6 +146,7 @@ export default function Auth({ onLogin }) {
     }
   }
 
+  // Submit the entered code and surface any expiry or validation error.
   const handleVerifyCode = async () => {
     if (!verificationCode || verificationCode.length !== 6) {
       setErrorMsg('Please enter the 6-digit verification code')
@@ -116,6 +154,7 @@ export default function Auth({ onLogin }) {
     }
     setVerifyingCode(true)
     setErrorMsg('')
+    setSuccessMsg('')
     try {
       const res = await fetch('/api/verify-email', {
         method: 'POST',
@@ -124,7 +163,10 @@ export default function Auth({ onLogin }) {
       })
       const data = await readApiResponse(res)
       if (!res.ok) {
-        throw new Error(data.detail || 'Invalid verification code')
+        const message = data.detail === 'Invalid verification code'
+          ? 'Invalid OTP'
+          : data.detail || 'Could not verify the code. Please try again.'
+        throw new Error(message)
       }
       setPendingVerification(false)
       setSuccessMsg('Email verified! You can now log in.')
@@ -270,11 +312,13 @@ export default function Auth({ onLogin }) {
                     />
                   ))}
                 </div>
-                <p className="text-center text-sm text-muted-foreground">Enter the 6-digit code from your email</p>
+                <p className="text-center text-sm text-muted-foreground">
+                  Enter the 6-digit code from your email. Codes expire after 15 minutes.
+                </p>
               </div>
 
-              {errorMsg && !successMsg && (
-                <div className="p-3 bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 text-sm rounded-lg border border-red-100 dark:border-red-900/50 flex items-center gap-2">
+              {errorMsg && (
+                <div role="alert" className="p-3 bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 text-sm rounded-lg border border-red-100 dark:border-red-900/50 flex items-center gap-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
                   {errorMsg}
                 </div>
@@ -284,7 +328,7 @@ export default function Auth({ onLogin }) {
                 type="button"
                 onClick={handleVerifyCode}
                 className="w-full h-12 bg-[#4EA0F5] hover:bg-[#348BEA] text-white font-semibold text-[15px] rounded-xl shadow-md transition-all hover:shadow-lg"
-                disabled={verifyingCode || verificationCode.length !== 6}
+                disabled={loading || verifyingCode || verificationCode.length !== 6}
               >
                 {verifyingCode ? (
                   <>
@@ -300,7 +344,7 @@ export default function Auth({ onLogin }) {
                 type="button"
                 onClick={handleResendVerification}
                 className="w-full h-12 bg-[#4EA0F5] hover:bg-[#348BEA] text-white font-semibold text-[15px] rounded-xl shadow-md transition-all hover:shadow-lg"
-                disabled={loading}
+                disabled={loading || verifyingCode || resendSeconds > 0}
               >
                 {loading ? (
                   <>
@@ -308,7 +352,7 @@ export default function Auth({ onLogin }) {
                     Sending...
                   </>
                 ) : (
-                  'Resend Verification Email'
+                  resendSeconds > 0 ? `Resend Verification Email in ${resendSeconds}s` : 'Resend Verification Email'
                 )}
               </Button>
 

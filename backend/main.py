@@ -18,7 +18,10 @@ import threading
 import time
 import requests
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from math import ceil
 from starlette.middleware.sessions import SessionMiddleware
+from postgrest.exceptions import APIError
 from typing import Optional
 
 load_dotenv()
@@ -47,10 +50,13 @@ import backend.auth as custom_auth
 from backend.voice import router as voice_router
 from backend.voice_history import router as voice_history_router
 from backend.email_service import (
+    VERIFICATION_CODE_VALID_MINUTES,
     send_verification_email,
     generate_verification_code,
     get_expiration_time,
 )
+
+VERIFICATION_RESEND_SECONDS = 60
 
 def keep_awake(url: str):
     """Background task to ping the server and keep it alive on Render."""
@@ -106,13 +112,96 @@ SECRET_KEY = os.getenv("JWT_SECRET_KEY", "medimind_local_secret_key_needs_32_byt
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
 
-def _send_verification_or_502(email: str, code: str) -> None:
-    """Send an OTP email and fail the request if delivery cannot be attempted."""
+def _parse_verification_expiration(expires_at: str) -> datetime:
+    """Read a stored OTP deadline, treating legacy naive timestamps as UTC."""
+    deadline = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+    if deadline.tzinfo is None:
+        return deadline.replace(tzinfo=timezone.utc)
+    return deadline
+
+
+def _verification_retry_after(expires_at: Optional[str]) -> int:
+    """Return the remaining resend cooldown from the stored OTP deadline."""
+    if not expires_at:
+        return 0
+
+    deadline = _parse_verification_expiration(expires_at)
+    remaining = (deadline - datetime.now(timezone.utc)).total_seconds()
+    lifetime = VERIFICATION_CODE_VALID_MINUTES * 60
+    # Older codes can have deadlines beyond the current lifetime.
+    if remaining > lifetime:
+        return 0
+    return max(0, ceil(remaining - lifetime + VERIFICATION_RESEND_SECONDS))
+
+
+def _update_pending_verification(email: str, expires_at: Optional[str], changes: dict):
+    """Update a pending account only if its OTP deadline still matches the snapshot."""
+    query = (
+        supabase.table("custom_users")
+        .update(changes)
+        .eq("email", email)
+        .not_.is_("is_verified", "true")
+    )
+    if expires_at is None:
+        query = query.is_("verification_code_expires", None)
+    else:
+        query = query.eq("verification_code_expires", expires_at)
+    return query.execute()
+
+
+def _issue_verification_code(
+    email: str, user: Optional[dict], password_hash: Optional[str] = None
+) -> None:
+    """Reserve and send one code, then start its lifetime when the mail provider accepts it."""
+    previous_expiration = user.get("verification_code_expires") if user is not None else None
+    retry_after = _verification_retry_after(previous_expiration)
+    if retry_after:
+        raise HTTPException(
+            status_code=429,
+            detail="Please wait before requesting another verification email.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    code = generate_verification_code()
+    reserved_expiration = get_expiration_time().isoformat()
+    changes = {
+        "verification_code": code,
+        "verification_code_expires": reserved_expiration,
+    }
+    if password_hash is not None:
+        changes["password_hash"] = password_hash
+
+    # Reserve the code before sending so concurrent requests cannot both send.
+    if user is None:
+        try:
+            supabase.table("custom_users").insert(
+                {"email": email, "is_verified": False, **changes}
+            ).execute()
+        except APIError as exc:
+            if exc.code != "23505":
+                raise
+            raise HTTPException(status_code=409, detail="Signup is already in progress.") from exc
+    elif not _update_pending_verification(email, previous_expiration, changes).data:
+        raise HTTPException(status_code=409, detail="Verification has changed. Please try again.")
+
     if not send_verification_email(email, code):
+        # Keep the previous code usable and allow a retry after a failed send.
+        previous_values = (
+            {field: user.get(field) for field in changes}
+            if user is not None
+            else {"verification_code": None, "verification_code_expires": None}
+        )
+        _update_pending_verification(email, reserved_expiration, previous_values)
         raise HTTPException(
             status_code=502,
             detail="Could not send verification email. Please try again later.",
         )
+
+    _update_pending_verification(
+        email,
+        reserved_expiration,
+        {"verification_code_expires": get_expiration_time().isoformat()},
+    )
 
 
 def _generate_thread_title(thread_id: str, user_message: str, ai_reply: str):
@@ -164,54 +253,26 @@ def health_check(response: Response):
 
 @app.post("/signup")
 def signup(req: SignupRequest):
-    """Custom Registration Endpoint - creates unverified user and sends verification email"""
+    """Create or resume a pending signup and send an email verification code."""
     existing = (
         supabase.table("custom_users").select("*").eq("email", req.email).execute()
     )
-    if existing.data:
-        user = existing.data[0]
-        if user.get("is_verified", False):
-            raise HTTPException(status_code=400, detail="User already exists")
-        verification_code = generate_verification_code()
-        expires_at = get_expiration_time()
-        supabase.table("custom_users").update(
-            {
-                "password_hash": custom_auth.get_password_hash(req.password),
-                "verification_code": verification_code,
-                "verification_code_expires": expires_at.isoformat(),
-            }
-        ).eq("email", req.email).execute()
-        _send_verification_or_502(req.email, verification_code)
-        return {
-            "status": "pending_verification",
-            "message": "Verification email sent. Please check your email.",
-        }
+    user = existing.data[0] if existing.data else None
+    if user is not None and user.get("is_verified", False):
+        raise HTTPException(status_code=400, detail="User already exists")
 
-    verification_code = generate_verification_code()
-    expires_at = get_expiration_time()
-
-    hashed_pw = custom_auth.get_password_hash(req.password)
-    supabase.table("custom_users").insert(
-        {
-            "email": req.email,
-            "password_hash": hashed_pw,
-            "is_verified": False,
-            "verification_code": verification_code,
-            "verification_code_expires": expires_at.isoformat(),
-        }
-    ).execute()
-
-    _send_verification_or_502(req.email, verification_code)
+    _issue_verification_code(req.email, user, custom_auth.get_password_hash(req.password))
 
     return {
         "status": "pending_verification",
         "message": "Verification email sent. Please check your email.",
+        "resend_after_seconds": VERIFICATION_RESEND_SECONDS,
     }
 
 
 @app.post("/login", response_model=TokenResponse)
 def login(req: LoginRequest):
-    """Authenticate verified users with a password when their account has one."""
+    """Authenticate verified users or report the remaining verification cooldown."""
     user = supabase.table("custom_users").select("*").eq("email", req.email).execute()
     if not user.data:
         raise HTTPException(status_code=400, detail="Invalid email or password")
@@ -219,9 +280,11 @@ def login(req: LoginRequest):
     db_user = user.data[0]
 
     if not db_user.get("is_verified", False):
+        retry_after = _verification_retry_after(db_user.get("verification_code_expires"))
         raise HTTPException(
             status_code=403,
             detail="Please verify your email first. Check your inbox for the verification code.",
+            headers={"Retry-After": str(retry_after)},
         )
 
     # Linked Google accounts can still sign in with their original password.
@@ -258,9 +321,28 @@ class ResendVerificationRequest(BaseModel):
     email: str
 
 
+def _verification_code_has_expired(expires_at: Optional[str]) -> bool:
+    """Treat a missing deadline as expired and reject a code at its deadline."""
+    return not expires_at or datetime.now(timezone.utc) >= _parse_verification_expiration(
+        expires_at
+    )
+
+
+def _mark_email_verified(email: str, code: str) -> bool:
+    """Consume the checked code only if a resend has not replaced it."""
+    result = supabase.table("custom_users").update(
+        {
+            "is_verified": True,
+            "verification_code": None,
+            "verification_code_expires": None,
+        }
+    ).eq("email", email).eq("verification_code", code).execute()
+    return bool(result.data)
+
+
 @app.post("/verify-email")
 def verify_email(req: VerifyEmailRequest):
-    """Verify user email with verification code"""
+    """Verify the account using its current, unexpired code."""
     user = supabase.table("custom_users").select("*").eq("email", req.email).execute()
     if not user.data:
         raise HTTPException(status_code=404, detail="User not found")
@@ -279,25 +361,14 @@ def verify_email(req: VerifyEmailRequest):
     if not stored_code or stored_code != req.code:
         raise HTTPException(status_code=400, detail="Invalid verification code")
 
-    if expires_at:
-        from datetime import datetime, timezone
+    if _verification_code_has_expired(expires_at):
+        raise HTTPException(
+            status_code=400,
+            detail="Verification code expired. Please request a new one.",
+        )
 
-        exp_time = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
-        if exp_time.tzinfo is None:
-            exp_time = exp_time.replace(tzinfo=timezone.utc)
-        if datetime.now(timezone.utc) > exp_time:
-            raise HTTPException(
-                status_code=400,
-                detail="Verification code expired. Please request a new one.",
-            )
-
-    supabase.table("custom_users").update(
-        {
-            "is_verified": True,
-            "verification_code": None,
-            "verification_code_expires": None,
-        }
-    ).eq("email", req.email).execute()
+    if not _mark_email_verified(req.email, stored_code):
+        raise HTTPException(status_code=409, detail="Verification has changed. Please try again.")
 
     return {
         "status": "verified",
@@ -310,7 +381,7 @@ def resend_verification(
     req: Optional[ResendVerificationRequest] = Body(default=None),
     email: Optional[str] = None,
 ):
-    """Resend verification email"""
+    """Send a replacement verification code after the account's cooldown."""
     email = req.email if req else email
     if not email:
         raise HTTPException(status_code=422, detail="Email is required")
@@ -324,27 +395,18 @@ def resend_verification(
     if db_user.get("is_verified", False):
         raise HTTPException(status_code=400, detail="Email already verified")
 
-    verification_code = generate_verification_code()
-    expires_at = get_expiration_time()
-
-    supabase.table("custom_users").update(
-        {
-            "verification_code": verification_code,
-            "verification_code_expires": expires_at.isoformat(),
-        }
-    ).eq("email", email).execute()
-
-    _send_verification_or_502(email, verification_code)
+    _issue_verification_code(email, db_user)
 
     return {
         "status": "sent",
         "message": "Verification email resent. Please check your inbox.",
+        "resend_after_seconds": VERIFICATION_RESEND_SECONDS,
     }
 
 
 @app.get("/verify-email")
 def verify_email_get(code: str, email: str) -> HTMLResponse:
-    """Verify email via GET link (legacy support)"""
+    """Verify an unexpired code from a legacy email link."""
     try:
         user = supabase.table("custom_users").select("*").eq("email", email).execute()
         if not user.data:
@@ -376,24 +438,15 @@ def verify_email_get(code: str, email: str) -> HTMLResponse:
                 content="<h1>Invalid verification code</h1>", status_code=400
             )
 
-        if expires_at:
-            from datetime import datetime, timezone
+        if _verification_code_has_expired(expires_at):
+            return HTMLResponse(
+                content="<h1>Verification code expired</h1>", status_code=400
+            )
 
-            exp_time = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
-            if exp_time.tzinfo is None:
-                exp_time = exp_time.replace(tzinfo=timezone.utc)
-            if datetime.now(timezone.utc) > exp_time:
-                return HTMLResponse(
-                    content="<h1>Verification code expired</h1>", status_code=400
-                )
-
-        supabase.table("custom_users").update(
-            {
-                "is_verified": True,
-                "verification_code": None,
-                "verification_code_expires": None,
-            }
-        ).eq("email", email).execute()
+        if not _mark_email_verified(email, stored_code):
+            return HTMLResponse(
+                content="<h1>Verification has changed. Please try again.</h1>", status_code=409
+            )
 
         return HTMLResponse(
             content=f"""

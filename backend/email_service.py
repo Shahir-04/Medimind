@@ -26,6 +26,7 @@ GMAIL_CLIENT_SECRET = os.getenv("GMAIL_CLIENT_SECRET", "")
 GMAIL_REFRESH_TOKEN = os.getenv("GMAIL_REFRESH_TOKEN", "")
 GMAIL_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GMAIL_SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
+VERIFICATION_CODE_VALID_MINUTES = 15
 
 
 def generate_verification_code(length: int = 6) -> str:
@@ -33,6 +34,8 @@ def generate_verification_code(length: int = 6) -> str:
 
 
 def _verification_email_content(code: str) -> tuple[str, str]:
+    """Render the verification code and its lifetime for both email formats."""
+    expiry_notice = f"This code expires in {VERIFICATION_CODE_VALID_MINUTES} minutes."
     html_content = f"""
         <!DOCTYPE html>
         <html>
@@ -60,7 +63,7 @@ def _verification_email_content(code: str) -> tuple[str, str]:
                 </div>
                 
                 <div style="text-align: center; margin-top: 30px;">
-                    <p style="color: #94a3b8; font-size: 13px; margin: 0;">This code expires in 24 hours.</p>
+                    <p style="color: #94a3b8; font-size: 13px; margin: 0;">{expiry_notice}</p>
                     <p style="color: #94a3b8; font-size: 13px; margin: 10px 0 0 0;">
                         If you didn't create an account, you can safely ignore this email.
                     </p>
@@ -75,7 +78,7 @@ def _verification_email_content(code: str) -> tuple[str, str]:
         
         Your verification code is: {code}
         
-        This code expires in 24 hours.
+        {expiry_notice}
         If you didn't create an account, you can safely ignore this email.
         """
 
@@ -195,5 +198,6 @@ def send_verification_email(to_email: str, code: str) -> bool:
         return False
 
 
-def get_expiration_time(hours: int = 24) -> datetime:
-    return datetime.now(timezone.utc) + timedelta(hours=hours)
+def get_expiration_time() -> datetime:
+    """Return the UTC deadline for a newly issued verification code."""
+    return datetime.now(timezone.utc) + timedelta(minutes=VERIFICATION_CODE_VALID_MINUTES)
