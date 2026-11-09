@@ -44,6 +44,8 @@ from backend.models import (
 import backend.agent as agent
 from backend.rag import process_and_store_pdf
 import backend.auth as custom_auth
+from backend.voice import router as voice_router
+from backend.voice_history import router as voice_history_router
 from backend.email_service import (
     send_verification_email,
     generate_verification_code,
@@ -84,6 +86,8 @@ app = FastAPI(
     description="Backend for MediMind AI Assistant",
     lifespan=lifespan,
 )
+app.include_router(voice_router)
+app.include_router(voice_history_router)
 
 # Configure CORS
 app.add_middleware(
@@ -207,7 +211,7 @@ def signup(req: SignupRequest):
 
 @app.post("/login", response_model=TokenResponse)
 def login(req: LoginRequest):
-    """Custom Login Endpoint"""
+    """Authenticate verified users with a password when their account has one."""
     user = supabase.table("custom_users").select("*").eq("email", req.email).execute()
     if not user.data:
         raise HTTPException(status_code=400, detail="Invalid email or password")
@@ -220,14 +224,8 @@ def login(req: LoginRequest):
             detail="Please verify your email first. Check your inbox for the verification code.",
         )
 
-    provider = db_user.get("provider", "email")
-    
-    # For Google OAuth users, skip password verification
-    if provider == "google":
-        pass  # Allow login without password
-    elif not db_user["password_hash"]:
-        raise HTTPException(status_code=400, detail="Invalid email or password")
-    elif not custom_auth.verify_password(req.password, db_user["password_hash"]):
+    # Linked Google accounts can still sign in with their original password.
+    if not custom_auth.verify_password(req.password, db_user.get("password_hash")):
         raise HTTPException(status_code=400, detail="Invalid email or password")
 
     token = custom_auth.create_access_token({"sub": req.email})

@@ -28,7 +28,7 @@ const pageCopy = {
       {
         heading: 'Service Providers',
         body:
-          'We use trusted infrastructure and API providers to operate MediMind, including hosting, authentication, database, email delivery, AI processing, and analytics or reliability tooling. These providers process data only as needed to provide their services to MediMind.',
+          'We use trusted infrastructure and API providers to operate MediMind, including hosting, authentication, database, email delivery, AI processing, and analytics or reliability tooling. These providers process data only as needed to provide their services to MediMind. During voice chat, your browser streams microphone audio directly to Google Gemini. MediMind saves the text transcript to your account history when the voice chat ends.',
       },
       {
         heading: 'Data Security',

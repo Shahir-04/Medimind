@@ -25,6 +25,7 @@ MediMind is a state-of-the-art AI medical assistant designed to provide personal
 - **Patient Case Analysis**: Support for medical document uploads (PDF). MediMind indexes and analyzes your case files to provide specific insights based on your clinical records.
 - **Secure File Scoping**: Advanced document management allowing files to be scoped as **Temporary** (deleted after session) or **In-Chat Only** (restricted to a specific conversation thread).
 - **Persistent Chat History**: Scalable conversation management powered by Supabase, enabling users to revisit, rename, and manage past medical consultations.
+- **Live voice chat** with spoken replies and captions powered by `gemini-3.8-live`.
 - **Interactive Symptom Tracking**: Dynamically extracts and visualizes reported symptoms and conditions for easy monitoring.
 - **Global Feedback Intelligence**: Implements a global feedback loop where positive and negative interactions improve the AI's empathy and accuracy for the entire community.
 - **Responsive Experience**: A premium, glassmorphism-inspired UI designed to work seamlessly on Mobile, Tablet, and Desktop resolutions.
@@ -59,7 +60,7 @@ MediMind is a state-of-the-art AI medical assistant designed to provide personal
 - Python (3.13+)
 - Supabase Account
 - Ollama Cloud API key for generation
-- Gemini API key for embeddings
+- Gemini API key for embeddings and live voice chat
 - Pinecone Account
 
 ### Backend Setup
@@ -95,15 +96,16 @@ Create a `.env` file in the project root and generate an Ollama Cloud API key. [
 
 The hosted API uses `gemma4:31b` for Gemma 4 31B Cloud. [Ollama Cloud setup](https://docs.ollama.com/cloud)
 
-Generate a `GEMINI_API_KEY` for embedding requests. [Gemini API keys](https://aistudio.google.com/apikey)
+Generate a `GEMINI_API_KEY` for embedding requests and live voice chat. [Gemini API keys](https://aistudio.google.com/apikey)
 
 ```env
 # LLM generation via Ollama Cloud
 OLLAMA_API_KEY=your_ollama_api_key
 OLLAMA_MODEL=gemma4:31b
 
-# Gemini embeddings
+# Gemini embeddings and live voice chat
 GEMINI_API_KEY=your_gemini_api_key
+JWT_SECRET_KEY=your_random_jwt_signing_secret
 
 # Database (Supabase)
 SUPABASE_URL=your_supabase_url
@@ -114,6 +116,12 @@ DATABASE_URL=your_supabase_postgresql_connection_string
 PINECONE_API_KEY=your_pinecone_key
 PINECONE_INDEX_NAME=your_index_name
 ```
+
+### Live voice chat
+
+Set `JWT_SECRET_KEY` to a random secret of at least 32 bytes. Sign in, select **Start voice chat** in the composer, and grant microphone access on HTTPS or localhost. If you were signed in before voice chat was added, sign out and back in once to refresh your session.
+
+MediMind issues a single-use session credential so the browser can stream audio directly to Gemini. Voice sessions use the context shared within that session. When a voice chat ends, MediMind opens the saved text transcript and adds it to History. Voice history stores captions through the backend's `DATABASE_URL` connection, which needs permission to create the private `medimind_voice` schema on the first save. [Gemini Live API](https://ai.google.dev/gemini-api/docs/live-api)
 
 ### Migrating existing embeddings
 

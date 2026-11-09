@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Send, Paperclip, ThumbsUp, ThumbsDown, LogOut, Loader2, CheckCircle2, Bot, Sparkles, Pencil, Check, X, Sun, Moon, MessageSquarePlus, History, Files, FileText, Trash2, LayoutDashboard, Activity, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import VoiceChat from '@/components/VoiceChat';
 import {
   Tooltip,
   TooltipContent,
@@ -34,7 +35,10 @@ export default function Chat({ session, onLogout }) {
   const [editText, setEditText] = useState('');
 
   const [threads, setThreads] = useState([]);
+  const [voiceThreads, setVoiceThreads] = useState([]);
   const [activeThreadId, setActiveThreadId] = useState(null);
+  const [isVoiceThread, setIsVoiceThread] = useState(false);
+  const [historyError, setHistoryError] = useState('');
   const [isFilesModalOpen, setIsFilesModalOpen] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [isTempUpload, setIsTempUpload] = useState(false);
@@ -48,9 +52,11 @@ export default function Chat({ session, onLogout }) {
   const chatViewportRef = useRef(null);
   const messageListRef = useRef(null);
   const fileInputRef = useRef(null);
+  const threadRequest = useRef(0);
+  const historyThreads = [...threads, ...voiceThreads].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
 
   // Replies and file cards can follow the latest user text message.
-  const editableMessageIndex = isTyping ? -1 : messages.findLastIndex(m => m.role === 'user' && !m.isFile);
+  const editableMessageIndex = isTyping || isVoiceThread ? -1 : messages.findLastIndex(m => m.role === 'user' && !m.isFile);
 
   // Discard the draft when editing ends or the conversation changes.
   const cancelEdit = () => {
@@ -126,8 +132,38 @@ export default function Chat({ session, onLogout }) {
     }
   }, [session]);
 
+  // Fetch private voice history independently so text history remains available if it fails.
+  useEffect(() => {
+    const controller = new AbortController();
+    async function fetchVoiceThreads() {
+      try {
+        const res = await fetch('/api/voice/threads', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          signal: controller.signal,
+        });
+        if (res.status === 401 && !controller.signal.aborted) {
+          setHistoryError('Sign out and sign back in to load voice history.');
+          return;
+        }
+        if (!res.ok) throw new Error('Could not load voice history.');
+        const data = await res.json();
+        if (controller.signal.aborted) return;
+        setVoiceThreads(previous => {
+          const existing = new Set(previous.map(thread => thread.id));
+          const loaded = data.threads.filter(thread => !existing.has(thread.id));
+          return [...previous, ...loaded.map(thread => ({ ...thread, isVoice: true }))];
+        });
+      } catch {
+        if (!controller.signal.aborted) setHistoryError('Could not load voice history. Refresh to try again.');
+      }
+    }
+    void fetchVoiceThreads();
+    return () => controller.abort();
+  }, [session.access_token]);
+
   useEffect(() => {
     if (!session) return;
+    let ignore = false;
     const fetchMemoryAndSetWelcome = async () => {
       try {
         const res = await fetch(`/api/memory/${encodeURIComponent(session.email)}`, {
@@ -143,6 +179,7 @@ export default function Chat({ session, onLogout }) {
           isMemoryEmpty = memoryArray.length === 0;
         }
 
+        if (ignore) return;
         setMessages([{
           id: 1,
           role: 'ai',
@@ -151,6 +188,7 @@ export default function Chat({ session, onLogout }) {
             : "Welcome back to MediMind! 🌿\n\nHow can I help you today?"
         }]);
       } catch (err) {
+        if (ignore) return;
         console.error("Failed to fetch memory:", err);
         setMessages([{
           id: 1,
@@ -162,19 +200,41 @@ export default function Chat({ session, onLogout }) {
     if (!activeThreadId) {
       fetchMemoryAndSetWelcome();
     }
+    return () => { ignore = true; };
   }, [session, activeThreadId]);
 
-  // Keep the active thread ID and its transcript in sync for sends and edits.
-  const loadThread = async (threadId) => {
+  // Display a thread and invalidate any earlier history request that is still pending.
+  const openThread = (thread, savedMessages) => {
+    threadRequest.current += 1;
+    cancelEdit();
+    setActiveThreadId(thread.id);
+    setIsVoiceThread(Boolean(thread.isVoice));
+    setMessages(savedMessages.map(({ id, role, content }) => ({ id, role, content })));
+  };
+
+  // Read text history or the signed-in user's private voice transcript.
+  const loadThread = async (thread) => {
+    const request = ++threadRequest.current;
+    setHistoryError('');
     try {
-      const res = await fetch(`/api/messages/${threadId}`);
-      if (res.ok) {
-        const data = await res.json();
-        cancelEdit();
-        setActiveThreadId(threadId);
-        setMessages((data.messages || []).map(m => ({ id: m.id, role: m.role, content: m.content })));
-      }
-    } catch (e) { }
+      const path = thread.isVoice ? '/api/voice/threads' : '/api/messages';
+      const res = await fetch(`${path}/${thread.id}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (!res.ok) throw new Error('Could not open the conversation.');
+      const data = await res.json();
+      if (request === threadRequest.current) openThread(thread, data.messages || []);
+    } catch {
+      if (request === threadRequest.current) setHistoryError('Could not open the conversation. Try again.');
+    }
+  };
+
+  // Add the saved session to History and show its transcript without a second network request.
+  const showSavedVoiceThread = ({ thread, messages: savedMessages }) => {
+    const savedThread = { ...thread, isVoice: true };
+    setVoiceThreads(previous => [savedThread, ...previous.filter(item => item.id !== thread.id)]);
+    setHistoryError('');
+    openThread(savedThread, savedMessages);
   };
 
   const cleanupTempFiles = async () => {
@@ -189,26 +249,37 @@ export default function Chat({ session, onLogout }) {
 
   // Reset the transcript and its edit draft when starting a conversation.
   const startNewChat = () => {
+    threadRequest.current += 1;
     cleanupTempFiles();
     cancelEdit();
     setActiveThreadId(null);
+    setIsVoiceThread(false);
     setMessages([{ id: 1, role: 'ai', content: "Welcome to MediMind! 🌿\n\nHow can I help you today?" }]);
   };
 
-  const handleDeleteThread = async (e, threadId) => {
+  // Remove the conversation from its history only after the server deletes it.
+  const handleDeleteThread = async (e, thread) => {
     e.stopPropagation();
+    const request = threadRequest.current;
+    setHistoryError('');
     try {
-      const res = await fetch(`/api/threads/${threadId}`, {
+      const path = thread.isVoice ? '/api/voice/threads' : '/api/threads';
+      const res = await fetch(`${path}/${thread.id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${session.access_token}` },
       });
       if (res.ok) {
-        setThreads(prev => prev.filter(t => t.id !== threadId));
-        if (activeThreadId === threadId) {
+        const updateHistory = thread.isVoice ? setVoiceThreads : setThreads;
+        updateHistory(prev => prev.filter(t => t.id !== thread.id));
+        if (activeThreadId === thread.id && request === threadRequest.current) {
           startNewChat();
         }
+      } else {
+        setHistoryError('Could not delete the conversation. Try again.');
       }
-    } catch (e) { }
+    } catch {
+      setHistoryError('Could not delete the conversation. Try again.');
+    }
   };
 
   const handleLogout = () => {
@@ -284,7 +355,7 @@ export default function Chat({ session, onLogout }) {
   // Sending a new message supersedes any open edit draft.
   const handleSend = async (e) => {
     e?.preventDefault();
-    if (isTyping || !input.trim()) return;
+    if (isTyping || isVoiceThread || !input.trim()) return;
 
     const currentMessages = messages;
     const userMessage = { id: Date.now(), role: 'user', content: input };
@@ -452,13 +523,14 @@ export default function Chat({ session, onLogout }) {
             </div>
 
             <div className="space-y-1">
-              {threads.map(thread => (
+              {historyThreads.map(thread => (
                 <div
                   key={thread.id}
                   className={`w-full flex items-center gap-1 rounded-xl transition-all ${activeThreadId === thread.id ? 'bg-primary/10 shadow-subtle' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}
                 >
                   <button
-                    onClick={() => { loadThread(thread.id); setIsSidebarOpen(false); }}
+                    onClick={() => { loadThread(thread); setIsSidebarOpen(false); }}
+                    disabled={thread.isVoice && isTyping}
                     className={`min-h-11 min-w-0 flex-1 text-left truncate p-3 text-[13px] font-medium ${activeThreadId === thread.id ? 'text-primary' : 'text-neutral-600 dark:text-neutral-400'}`}
                   >
                     {thread.title}
@@ -466,7 +538,7 @@ export default function Chat({ session, onLogout }) {
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
-                        onClick={(e) => handleDeleteThread(e, thread.id)}
+                        onClick={(e) => handleDeleteThread(e, thread)}
                         aria-label={`Delete chat: ${thread.title}`}
                         className="grid size-11 lg:size-8 mr-1.5 place-items-center rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors shrink-0"
                       >
@@ -477,7 +549,7 @@ export default function Chat({ session, onLogout }) {
                   </Tooltip>
                 </div>
               ))}
-              {threads.length === 0 && (
+              {historyThreads.length === 0 && (
                 <p className="text-xs text-muted-foreground px-3 py-2 italic opacity-60">No past conversations</p>
               )}
             </div>
@@ -504,7 +576,7 @@ export default function Chat({ session, onLogout }) {
 
         {/* Chat Area */}
         <main className="relative flex min-w-0 flex-1 flex-col">
-          <header className="flex shrink-0 items-center justify-between gap-2 border-b border-neutral-200/50 bg-background/80 px-3 py-2 backdrop-blur-sm dark:border-neutral-700/50 sm:px-4 lg:justify-end lg:px-8">
+          <header className="flex shrink-0 items-center justify-between gap-2 px-3 py-2 sm:px-4 lg:justify-end lg:px-8">
             <button
               onClick={() => setIsSidebarOpen(true)}
               aria-label="Open chat navigation"
@@ -594,7 +666,7 @@ export default function Chat({ session, onLogout }) {
                                   'message-ai'
                               }`}
                           >
-                            {msg.role === 'ai' ? (
+                            {msg.role === 'ai' && !isVoiceThread ? (
                               <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:mt-3 prose-headings:mb-2 prose-p:mb-2 prose-ul:my-2 prose-ol:my-2">
                                 <ReactMarkdown
                                   remarkPlugins={[remarkGfm]}
@@ -639,7 +711,7 @@ export default function Chat({ session, onLogout }) {
                       </>
                     )}
 
-                    {msg.role === 'ai' && (
+                    {msg.role === 'ai' && !isVoiceThread && (
                       <div className="flex items-center gap-1.5 mt-0.5 px-1">
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -694,49 +766,59 @@ export default function Chat({ session, onLogout }) {
           </div>
 
           {/* Input Box */}
-          <div className="shrink-0 border-t border-neutral-200/50 bg-background/95 px-3 py-2 dark:border-neutral-700/50 sm:px-4 sm:pb-4 lg:px-8">
+          <div className="shrink-0 px-3 py-2 sm:px-4 sm:pb-4 lg:px-8">
+            {historyError && <p role="alert" className="mb-2 text-center text-sm text-destructive">{historyError}</p>}
             <form onSubmit={handleSend} className="max-w-3xl mx-auto flex items-end glass-card rounded-2xl focus-within:ring-2 focus-within:ring-primary/10 focus-within:border-primary/30 transition-shadow shadow-glass p-1.5 sm:p-2 gap-1 sm:gap-2">
-              <input ref={fileInputRef} type="file" accept="application/pdf" hidden onChange={handleFileUpload} disabled={isUploading} />
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label="Upload case file (PDF)"
-                    onClick={() => fileInputRef.current.click()}
-                    disabled={isUploading}
-                    className="grid size-11 shrink-0 place-items-center rounded-xl text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
-                  >
-                    {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Paperclip className="w-5 h-5" />}
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent><p>Upload Case File (PDF)</p></TooltipContent>
-              </Tooltip>
+              {isVoiceThread ? (
+                <p className="flex min-h-11 flex-1 items-center px-3 text-sm text-muted-foreground">Saved voice transcript</p>
+              ) : (
+                <>
+                  <input ref={fileInputRef} type="file" accept="application/pdf" hidden onChange={handleFileUpload} disabled={isUploading} />
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label="Upload case file (PDF)"
+                        onClick={() => fileInputRef.current.click()}
+                        disabled={isUploading}
+                        className="grid size-11 shrink-0 place-items-center rounded-xl text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
+                      >
+                        {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Paperclip className="w-5 h-5" />}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent><p>Upload Case File (PDF)</p></TooltipContent>
+                  </Tooltip>
 
-              <textarea
-                aria-label="Message MediMind"
-                enterKeyHint="send"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                    e.preventDefault();
-                    if (input.trim()) handleSend();
-                  }
-                }}
-                placeholder="Message MediMind..."
-                className="min-h-11 min-w-0 flex-1 border-0 focus-visible:ring-0 outline-none shadow-none py-2.5 text-base bg-transparent font-medium placeholder:text-neutral-400 resize-none overflow-y-auto"
-                rows={Math.min(input.split('\n').length || 1, 5)}
-                disabled={isTyping}
-              />
-              <Button
-                type="submit"
-                size="icon"
-                aria-label="Send message"
-                disabled={isTyping || !input.trim()}
-                className="shrink-0 size-11 rounded-xl bg-gradient-to-br from-primary to-accent hover:from-primary/90 hover:to-accent/90 shadow-glow transition-all hover:scale-105 active:scale-95 text-white"
-              >
-                <Send className="w-4 h-4 ml-0.5" />
-              </Button>
+                  <textarea
+                    aria-label="Message MediMind"
+                    enterKeyHint="send"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                        e.preventDefault();
+                        if (input.trim()) handleSend();
+                      }
+                    }}
+                    placeholder="Message MediMind..."
+                    className="min-h-11 min-w-0 flex-1 border-0 focus-visible:ring-0 outline-none shadow-none py-2.5 text-base bg-transparent font-medium placeholder:text-neutral-400 resize-none overflow-y-auto"
+                    rows={Math.min(input.split('\n').length || 1, 5)}
+                    disabled={isTyping}
+                  />
+                </>
+              )}
+              <VoiceChat accessToken={session.access_token} disabled={isTyping || isUploading} onSaved={showSavedVoiceThread} />
+              {!isVoiceThread && (
+                <Button
+                  type="submit"
+                  size="icon"
+                  aria-label="Send message"
+                  disabled={isTyping || !input.trim()}
+                  className="shrink-0 size-11 rounded-xl bg-gradient-to-br from-primary to-accent hover:from-primary/90 hover:to-accent/90 shadow-glow transition-all hover:scale-105 active:scale-95 text-white"
+                >
+                  <Send className="w-4 h-4 ml-0.5" />
+                </Button>
+              )}
             </form>
             {uploadStatus && <div className="max-w-3xl mx-auto text-center mt-2 animate-fade-in"><p className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold"><Sparkles className="w-3 h-3" />{uploadStatus}</p></div>}
             <div className="text-center mt-1.5 sm:mt-2 text-[11px] font-medium text-muted-foreground">
