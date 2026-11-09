@@ -807,7 +807,13 @@ export default function Chat({ session, onLogout }) {
                   />
                 </>
               )}
-              <VoiceChat accessToken={session.access_token} disabled={isTyping || isUploading} onSaved={showSavedVoiceThread} />
+              <VoiceChat
+                accessToken={session.access_token}
+                disabled={isTyping || isUploading}
+                threadId={isVoiceThread ? activeThreadId : null}
+                history={isVoiceThread ? messages : undefined}
+                onSaved={showSavedVoiceThread}
+              />
               {!isVoiceThread && (
                 <Button
                   type="submit"

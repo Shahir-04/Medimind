@@ -13,7 +13,7 @@ const statusLabels = {
   saving: 'Saving conversation…',
 };
 
-// Send only the text captions, in the same order as the live transcript.
+// Save only new captions, using the same session ID for retries and navigation.
 function saveTranscript(accessToken, transcript, keepalive = false) {
   const messages = Object.values(transcript.turns).flatMap(turn => [
     { role: 'user', content: turn.You?.trim() },
@@ -21,18 +21,21 @@ function saveTranscript(accessToken, transcript, keepalive = false) {
   ]).filter(message => message.content);
   if (!messages.length) return null;
 
-  transcript.id ??= crypto.randomUUID();
-  return fetch('/api/voice/threads', {
+  transcript.sessionId ??= crypto.randomUUID();
+  const { threadId, sessionId } = transcript;
+  const path = threadId ? `/api/voice/threads/${threadId}/sessions` : '/api/voice/threads';
+  const body = threadId ? { session_id: sessionId, messages } : { thread_id: sessionId, messages };
+  return fetch(path, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ thread_id: transcript.id, messages }),
+    body: JSON.stringify(body),
     keepalive,
     signal: keepalive ? undefined : AbortSignal.timeout?.(15_000),
   });
 }
 
-// Run a live voice session and save its transcript as a conversation when it ends.
-export default function VoiceChat({ accessToken, disabled, onSaved }) {
+// Start or continue a voice thread and save its new turns when the session ends.
+export default function VoiceChat({ accessToken, disabled, threadId, history, onSaved }) {
   const dialog = useRef(null);
   const session = useRef(null);
   const captions = useRef(null);
@@ -82,9 +85,10 @@ export default function VoiceChat({ accessToken, disabled, onSaved }) {
     setError('');
     setSaveError('');
     setTurns({});
-    const conversation = { id: null, turns: {}, saving: false };
+    const conversation = { threadId, sessionId: null, turns: {}, saving: false };
     transcript.current = conversation;
     session.current = startVoiceSession(accessToken, {
+      history,
       onStatus: setStatus,
       onTranscript(turn, speaker, text) {
         // Keep the latest captions available even before React renders the update.
@@ -157,6 +161,7 @@ export default function VoiceChat({ accessToken, disabled, onSaved }) {
   const saving = status === 'saving';
   const label = muted && status === 'listening' ? 'Microphone muted' : statusLabels[status];
   const turnList = Object.entries(turns);
+  const startLabel = threadId ? 'Continue voice chat' : 'Start voice chat';
 
   return (
     <>
@@ -164,18 +169,19 @@ export default function VoiceChat({ accessToken, disabled, onSaved }) {
         <TooltipTrigger asChild>
           <Button
             type="button"
-            size="icon"
+            size={threadId ? 'default' : 'icon'}
             variant="ghost"
-            aria-label="Start voice chat"
+            aria-label={startLabel}
             aria-haspopup="dialog"
             disabled={disabled}
             onClick={start}
-            className="size-11 shrink-0 rounded-xl text-primary [&_svg]:size-5"
+            className={`h-11 shrink-0 rounded-xl text-primary [&_svg]:size-5 ${threadId ? 'px-3' : 'w-11'}`}
           >
             <AudioLines />
+            {threadId && <span>{startLabel}</span>}
           </Button>
         </TooltipTrigger>
-        <TooltipContent><p>Start voice chat</p></TooltipContent>
+        <TooltipContent><p>{startLabel}</p></TooltipContent>
       </Tooltip>
 
       <dialog
@@ -186,7 +192,11 @@ export default function VoiceChat({ accessToken, disabled, onSaved }) {
       >
         <div className="text-center">
           <h2 id="voice-chat-title" className="text-xl font-semibold">MediMind Voice</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Gemini processes live audio. The transcript is saved to History when the chat ends.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {transcript.current?.threadId
+              ? 'Gemini uses your recent transcript for context. New turns are saved to this conversation.'
+              : 'Gemini processes live audio. The transcript is saved to History when the chat ends.'}
+          </p>
           <div className="relative mx-auto mt-5 grid size-20 place-items-center rounded-full bg-primary/10 text-primary">
             {status === 'speaking' && <span className="absolute inset-0 rounded-full bg-primary/15 motion-safe:animate-ping" />}
             {connecting || saving ? <Loader2 className="size-7 animate-spin" /> : <AudioLines className="relative size-8" />}

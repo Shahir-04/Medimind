@@ -34,9 +34,16 @@ class VoiceMessage(BaseModel):
         return content.strip() if isinstance(content, str) else content
 
 
-class VoiceTranscript(BaseModel):
-    thread_id: UUID
+class SessionMessages(BaseModel):
     messages: list[VoiceMessage] = Field(min_length=1, max_length=1024)
+
+
+class VoiceTranscript(SessionMessages):
+    thread_id: UUID
+
+
+class VoiceContinuation(SessionMessages):
+    session_id: UUID
 
 
 @contextmanager
@@ -81,8 +88,20 @@ def create_voice_table(cursor) -> None:
 def thread_result(row: dict) -> dict:
     """Return the thread and transcript in the shape used by the chat screen."""
     thread = {key: row[key] for key in ("id", "title", "created_at")}
-    messages = [{**message, "id": f"{row['id']}:{index}"} for index, message in enumerate(row["messages"])]
+    messages = [
+        {"id": f"{row['id']}:{index}", "role": message["role"], "content": message["content"]}
+        for index, message in enumerate(row["messages"])
+    ]
     return {"thread": thread, "messages": messages}
+
+
+def fetch_owned_thread(cursor, thread_id: UUID, email: str) -> dict | None:
+    """Read the full transcript only when the thread belongs to the requester."""
+    cursor.execute("""
+        SELECT id, title, created_at, messages FROM medimind_voice.threads
+        WHERE id = %s AND user_email = %s
+    """, (str(thread_id), email))
+    return cursor.fetchone()
 
 
 @router.post("")
@@ -92,7 +111,6 @@ def save_voice_thread(req: VoiceTranscript, email: str = Depends(require_voice_u
     preview = " ".join(first_message.content.split())
     title = f"Voice · {preview[:54]}{'…' if len(preview) > 54 else ''}"
     messages = [message.model_dump() for message in req.messages]
-    thread_id = str(req.thread_id)
 
     with voice_cursor() as cursor:
         if not voice_table_exists(cursor):
@@ -102,17 +120,34 @@ def save_voice_thread(req: VoiceTranscript, email: str = Depends(require_voice_u
             INSERT INTO medimind_voice.threads (id, user_email, title, messages)
             VALUES (%s, %s, %s, %s) ON CONFLICT (id) DO NOTHING
             RETURNING id, title, created_at, messages
-        """, (thread_id, email, title, Json(messages)))
-        row = cursor.fetchone()
-        if row is None:
-            cursor.execute("""
-                SELECT id, title, created_at, messages FROM medimind_voice.threads
-                WHERE id = %s AND user_email = %s
-            """, (thread_id, email))
-            row = cursor.fetchone()
+        """, (str(req.thread_id), email, title, Json(messages)))
+        row = cursor.fetchone() or fetch_owned_thread(cursor, req.thread_id, email)
         if row is None:
             raise HTTPException(status_code=409, detail="This voice chat could not be saved.")
         return thread_result(row)
+
+
+@router.post("/{thread_id}/sessions")
+def append_voice_session(
+    thread_id: UUID, req: VoiceContinuation, email: str = Depends(require_voice_user)
+) -> dict:
+    """Append a completed session once and return the full thread."""
+    messages = [message.model_dump() for message in req.messages]
+    marker = {"session_id": str(req.session_id)}
+    # Store the retry marker alongside the first new caption to support existing transcripts.
+    messages[0].update(marker)
+    with voice_cursor() as cursor:
+        if voice_table_exists(cursor):
+            # One atomic append preserves both sessions when two devices save concurrently.
+            cursor.execute("""
+                UPDATE medimind_voice.threads SET messages = messages || %s::jsonb
+                WHERE id = %s AND user_email = %s AND NOT (messages @> %s::jsonb)
+                RETURNING id, title, created_at, messages
+            """, (Json(messages), str(thread_id), email, Json([marker])))
+            row = cursor.fetchone() or fetch_owned_thread(cursor, thread_id, email)
+            if row:
+                return thread_result(row)
+    raise HTTPException(status_code=404, detail="Voice thread not found.")
 
 
 @router.get("")
@@ -133,11 +168,7 @@ def read_voice_thread(thread_id: UUID, email: str = Depends(require_voice_user))
     """Read a saved voice transcript belonging to the signed-in user."""
     with voice_cursor() as cursor:
         if voice_table_exists(cursor):
-            cursor.execute("""
-                SELECT id, title, created_at, messages FROM medimind_voice.threads
-                WHERE id = %s AND user_email = %s
-            """, (str(thread_id), email))
-            row = cursor.fetchone()
+            row = fetch_owned_thread(cursor, thread_id, email)
             if row:
                 return thread_result(row)
     raise HTTPException(status_code=404, detail="Voice thread not found.")

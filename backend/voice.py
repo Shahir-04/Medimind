@@ -18,8 +18,8 @@ VOICE_MODEL = "models/gemini-3.8-live"
 VOICE_INSTRUCTIONS = """You are MediMind, a voice assistant for health and medical information.
 Speak in short, empathetic replies and explain medical terms in everyday language.
 Politely redirect questions outside health and medicine. Ask clarifying questions when needed.
-You only know what the user shares in this conversation. Never imply that you have reviewed their
-medical records, saved profile, or previous chats. Provide general information, avoid definitive
+Use what the user shares in this conversation, including earlier turns provided as context. Never
+imply that you have reviewed their medical records, saved profile, or other chats. Provide general information, avoid definitive
 diagnoses or medication changes, and encourage professional care when appropriate. For potentially
 life-threatening symptoms, advise the user to contact local emergency services immediately."""
 
@@ -43,8 +43,8 @@ def require_voice_user(
 
 
 @router.post("/voice/session", dependencies=[Depends(require_voice_user)])
-def create_voice_session(response: Response) -> dict[str, str]:
-    """Mint a single-use Gemini credential for an authenticated MediMind user."""
+def create_voice_session(response: Response, resume: bool = False) -> dict[str, str]:
+    """Mint a single-use credential, optionally enabling initial transcript history."""
 
     try:
         api_key = get_gemini_api_key()
@@ -52,6 +52,7 @@ def create_voice_session(response: Response) -> dict[str, str]:
         raise HTTPException(status_code=503, detail="Voice chat is unavailable until Gemini is configured.") from exc
 
     now = datetime.now(timezone.utc)
+    history_config = types.HistoryConfig(initial_history_in_client_content=True) if resume else None
     config = types.CreateAuthTokenConfig(
         uses=1,
         new_session_expire_time=now + timedelta(minutes=1),
@@ -64,6 +65,7 @@ def create_voice_session(response: Response) -> dict[str, str]:
                 system_instruction=VOICE_INSTRUCTIONS,
                 input_audio_transcription=types.AudioTranscriptionConfig(),
                 output_audio_transcription=types.AudioTranscriptionConfig(),
+                history_config=history_config,
             ),
         ),
     )

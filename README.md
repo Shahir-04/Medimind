@@ -121,7 +121,7 @@ PINECONE_INDEX_NAME=your_index_name
 
 Set `JWT_SECRET_KEY` to a random secret of at least 32 bytes. Sign in, select **Start voice chat** in the composer, and grant microphone access on HTTPS or localhost. If you were signed in before voice chat was added, sign out and back in once to refresh your session.
 
-MediMind issues a single-use session credential so the browser can stream audio directly to Gemini. Voice sessions use the context shared within that session. When a voice chat ends, MediMind opens the saved text transcript and adds it to History. Voice history stores captions through the backend's `DATABASE_URL` connection, which needs permission to create the private `medimind_voice` schema on the first save. [Gemini Live API](https://ai.google.dev/gemini-api/docs/live-api)
+MediMind issues a single-use session credential so the browser can stream audio directly to Gemini. When a voice chat ends, MediMind opens the saved text transcript and adds it to History. To pick up where you left off, open a voice thread and select **Continue voice chat**. Gemini receives recent messages from that thread as context, and MediMind appends the new turns to the same transcript. Voice history uses the backend's `DATABASE_URL` connection, which needs permission to create the private `medimind_voice` schema on the first save. [Gemini Live API](https://ai.google.dev/gemini-api/docs/live-api)
 
 ### Migrating existing embeddings
 

@@ -2,10 +2,25 @@ const LIVE_URL = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativ
 const WORKLET_URL = `${import.meta.env.BASE_URL}voice-capture.worklet.js`;
 const CONNECTION_TIMEOUT = 20_000;
 const MAX_QUEUED_INPUT = 256 * 1024;
+const MAX_HISTORY_CHARACTERS = 40_000;
+const MAX_HISTORY_MESSAGES = 120;
+
+// Keep the newest whole messages so a long thread still leaves room for live audio.
+function prepareHistory(history) {
+  const turns = [];
+  let remaining = MAX_HISTORY_CHARACTERS;
+  for (const { role, content } of history.slice(-MAX_HISTORY_MESSAGES).reverse()) {
+    if (content.length > remaining) break;
+    remaining -= content.length;
+    turns.push({ role: role === 'ai' ? 'model' : 'user', parts: [{ text: content }] });
+  }
+  return turns.reverse();
+}
 
 // Use the signed-in MediMind session to get a credential for one Live connection.
-async function requestVoiceToken(accessToken, signal) {
-  const response = await fetch('/api/voice/session', {
+async function requestVoiceToken(accessToken, signal, resume) {
+  const path = resume ? '/api/voice/session?resume=true' : '/api/voice/session';
+  const response = await fetch(path, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
     signal,
@@ -18,9 +33,10 @@ async function requestVoiceToken(accessToken, signal) {
 }
 
 // Start on a user gesture so browsers can authorize audio playback.
-export function startVoiceSession(accessToken, { onStatus, onTranscript, onError }) {
+export function startVoiceSession(accessToken, { history = [], onStatus, onTranscript, onError }) {
   const abort = new AbortController();
   const playback = new Set();
+  const historyTurns = prepareHistory(history);
   let audio;
   let microphone;
   let capture;
@@ -130,6 +146,10 @@ export function startVoiceSession(accessToken, { onStatus, onTranscript, onError
     try {
       const message = JSON.parse(typeof data === 'string' ? data : new TextDecoder().decode(data));
       if (message.setupComplete && !ready) {
+        if (historyTurns.length) {
+          // Gemini imports this initial history without generating a reply until new input arrives.
+          socket.send(JSON.stringify({ clientContent: { turns: historyTurns, turnComplete: true } }));
+        }
         clearTimeout(connectionTimer);
         ready = true;
         onStatus('listening');
@@ -193,7 +213,7 @@ export function startVoiceSession(accessToken, { onStatus, onTranscript, onError
 
       onStatus('connecting');
       connectionTimer = setTimeout(() => fail('Gemini took too long to connect. Try again shortly.'), CONNECTION_TIMEOUT);
-      const { token, model } = await requestVoiceToken(accessToken, abort.signal);
+      const { token, model } = await requestVoiceToken(accessToken, abort.signal, historyTurns.length > 0);
       if (abort.signal.aborted) return;
 
       socket = new WebSocket(`${LIVE_URL}?access_token=${encodeURIComponent(token)}`);
@@ -201,7 +221,9 @@ export function startVoiceSession(accessToken, { onStatus, onTranscript, onError
       socket.onopen = () => {
         if (abort.signal.aborted) return;
         // Gemini applies the remaining settings from the token's locked configuration.
-        socket.send(JSON.stringify({ setup: { model, generationConfig: { responseModalities: ['AUDIO'] } } }));
+        const setup = { model, generationConfig: { responseModalities: ['AUDIO'] } };
+        if (historyTurns.length) setup.historyConfig = { initialHistoryInClientContent: true };
+        socket.send(JSON.stringify({ setup }));
       };
       socket.onmessage = receive;
       socket.onerror = () => fail('Could not connect to Gemini voice chat. Try again shortly.');
